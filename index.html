@@ -17,7 +17,7 @@ function showStep(){
 }
 
 // =========================
-// LEAD SCORING
+// LEAD SCORING (UI only)
 // =========================
 function scoreLead(issue){
   issue = issue.toLowerCase();
@@ -30,13 +30,13 @@ function scoreLead(issue){
 }
 
 // =========================
-// SUBMIT HOMEOWNER LEAD
+// SUBMIT LEAD (🔥 FIXED)
 // =========================
 async function submitLead(){
-  const name = h_name.value.trim();
-  const phone = h_phone.value.trim();
-  const city = h_city.value.trim();
-  const issue = h_issue.value.trim();
+  const name = document.getElementById("h_name").value.trim();
+  const phone = document.getElementById("h_phone").value.trim();
+  const city = document.getElementById("h_city").value.trim();
+  const issue = document.getElementById("h_issue").value.trim();
   const status = document.getElementById("leadStatus");
 
   if(!name || !phone || !city){
@@ -49,30 +49,43 @@ async function submitLead(){
   try {
     const score = scoreLead(issue);
 
-    // Save lead
-    await supabase.from("homeowner_leads").insert([
-      { name, phone, city, issue, score }
-    ]);
+    // 🔥 SEND TO BACKEND ONLY
+    const res = await fetch("/api/new-lead", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name,
+        phone,
+        city,
+        issue,
+        score
+      })
+    });
 
-    // Notify (Discord optional)
+    const data = await res.json();
+
+    if(!res.ok){
+      throw new Error(data.error || "Failed");
+    }
+
+    // Optional Discord (frontend signal only)
     fetch("YOUR_DISCORD_WEBHOOK", {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
       body:JSON.stringify({
-        content:`🚨 NEW LEAD (${score})\n📍 ${city}\n🛠️ ${issue}\n📞 ${phone}`
+        content:`🚨 Lead Submitted (${score})\n📍 ${city}\n🛠️ ${issue}`
       })
     });
 
-    // Route lead
-    await sendToContractor(city, issue, phone);
-
-    status.innerText = "Submitted!";
+    status.innerText = "Submitted! A roofer will contact you.";
 
     // Reset form
-    h_name.value = "";
-    h_phone.value = "";
-    h_city.value = "";
-    h_issue.value = "";
+    document.getElementById("h_name").value = "";
+    document.getElementById("h_phone").value = "";
+    document.getElementById("h_city").value = "";
+    document.getElementById("h_issue").value = "";
 
   } catch(err){
     console.error(err);
@@ -81,12 +94,12 @@ async function submitLead(){
 }
 
 // =========================
-// CONTRACTOR REGISTER + SUBSCRIBE
+// CONTRACTOR SIGNUP + STRIPE
 // =========================
 async function registerContractor(){
-  const name = c_name.value.trim();
-  const phone = c_phone.value.trim();
-  const city = c_city.value.trim();
+  const name = document.getElementById("c_name").value.trim();
+  const phone = document.getElementById("c_phone").value.trim();
+  const city = document.getElementById("c_city").value.trim();
   const status = document.getElementById("status");
 
   if(!name || !phone || !city){
@@ -94,114 +107,79 @@ async function registerContractor(){
     return;
   }
 
-  status.innerText = "Processing...";
+  status.innerText = "Redirecting to secure checkout...";
 
   try {
-    // Save contractor
-    await supabase.from("contractors").insert([
-      {
-        name,
-        phone,
-        city,
-        active: false,
-        leads_received: 0,
-        max_leads: 20
-      }
-    ]);
-
-    // Start Stripe subscription
-    const res = await fetch("/api/create-subscription", {
+    // 🔥 ONLY CALL BACKEND (it should create contractor later)
+    const res = await fetch("/api/create-checkout-session", {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ email: phone + "@roofing.com" })
+      body: JSON.stringify({
+        email: `${phone}@roofing.com`,
+        name,
+        phone,
+        city
+      })
     });
 
     const data = await res.json();
+
+    if(!res.ok){
+      throw new Error(data.error || "Stripe failed");
+    }
 
     await stripe.redirectToCheckout({ sessionId: data.id });
 
   } catch(err){
     console.error(err);
-    status.innerText = "Error";
+    status.innerText = "Error starting subscription";
   }
 }
 
 // =========================
-// SEND TO ONE CONTRACTOR
-// =========================
-async function sendToContractor(city, issue, phone){
-
-  const { data: contractors } = await supabase
-    .from("contractors")
-    .select("*")
-    .eq("city", city)
-    .eq("active", true);
-
-  if(!contractors || contractors.length === 0) return;
-
-  for(const c of contractors){
-
-    if(c.leads_received >= c.max_leads) continue;
-
-    // Send SMS
-    await fetch("/api/send-sms", {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body:JSON.stringify({
-        to: c.phone,
-        message: `🔥 New roofing lead\n${city}\n${issue}\n${phone}`
-      })
-    });
-
-    // Update count
-    await supabase
-      .from("contractors")
-      .update({ leads_received: c.leads_received + 1 })
-      .eq("id", c.id);
-
-    break; // ONLY 1 contractor gets it
-  }
-}
-
-// =========================
-// ADMIN DASHBOARD
+// ADMIN DASHBOARD (READ ONLY)
 // =========================
 async function loadDashboard(){
 
-  // Stats
-  const { count: leadCount } = await supabase
-    .from("homeowner_leads")
-    .select("*", { count:"exact", head:true });
+  try {
+    // Stats
+    const { count: leadCount } = await supabase
+      .from("homeowner_leads")
+      .select("*", { count:"exact", head:true });
 
-  const { count: contractorCount } = await supabase
-    .from("contractors")
-    .select("*", { count:"exact", head:true });
+    const { count: contractorCount } = await supabase
+      .from("contractors")
+      .select("*", { count:"exact", head:true });
 
-  // Recent leads
-  const { data: leads } = await supabase
-    .from("homeowner_leads")
-    .select("*")
-    .order("created_at", { ascending:false })
-    .limit(5);
+    // Leads
+    const { data: leads } = await supabase
+      .from("homeowner_leads")
+      .select("*")
+      .order("created_at", { ascending:false })
+      .limit(5);
 
-  const admin = document.getElementById("admin");
+    const admin = document.getElementById("admin");
 
-  admin.innerHTML = `
-    <div class="card">📈 Leads: ${leadCount}</div>
-    <div class="card">👷 Contractors: ${contractorCount}</div>
-  `;
-
-  leads.forEach(l => {
-    const div = document.createElement("div");
-    div.className = "card";
-    div.innerHTML = `
-      📍 ${l.city}<br>
-      🛠️ ${l.issue}<br>
-      ⭐ Score: ${l.score}<br>
-      📞 ${l.phone}
+    admin.innerHTML = `
+      <div class="card">📈 Leads: ${leadCount}</div>
+      <div class="card">👷 Contractors: ${contractorCount}</div>
     `;
-    admin.appendChild(div);
-  });
+
+    leads.forEach(l => {
+      const div = document.createElement("div");
+      div.className = "card";
+      div.innerHTML = `
+        📍 ${l.city}<br>
+        🛠️ ${l.issue}<br>
+        ⭐ ${l.score || "-"}<br>
+        📞 ${l.phone}
+      `;
+      admin.appendChild(div);
+    });
+
+  } catch(err){
+    console.error("Dashboard error:", err);
+  }
 }
 
 // =========================

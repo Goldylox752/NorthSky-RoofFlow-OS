@@ -3,6 +3,8 @@ require("dotenv").config();
 const express = require("express");
 const Stripe = require("stripe");
 const bodyParser = require("body-parser");
+const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
@@ -18,16 +20,38 @@ const supabase = createClient(
 );
 
 // =========================
-// MIDDLEWARE
+// SECURITY MIDDLEWARE (ORDER MATTERS)
 // =========================
-app.use(express.json());
+app.use(cors({
+  origin: "*"
+}));
+
+app.use(rateLimit({
+  windowMs: 60 * 1000,
+  max: 60
+}));
+
+app.use(express.json({ limit: "1mb" }));
 
 // =========================
-// HEALTH
+// HEALTH CHECK
 // =========================
 app.get("/", (_, res) => {
-  res.send("🚀 RoofFlow Backend Running");
+  res.status(200).send("🚀 RoofFlow API Running");
 });
+
+// =========================
+// LEAD SCORING
+// =========================
+function scoreLead(issue = "") {
+  const text = issue.toLowerCase();
+
+  if (text.includes("leak")) return 95;
+  if (text.includes("storm")) return 90;
+  if (text.includes("replacement")) return 85;
+
+  return 75;
+}
 
 // =========================
 // STRIPE CHECKOUT
@@ -43,25 +67,22 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: "RoofFlow Lead System",
-            },
-            unit_amount: 49700,
-            recurring: { interval: "month" },
-          },
-          quantity: 1,
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          product_data: { name: "RoofFlow Lead System" },
+          unit_amount: 49700,
+          recurring: { interval: "month" }
         },
-      ],
+        quantity: 1
+      }],
       metadata: { email, name, phone, city },
-      success_url: "https://yourdomain.com/success",
-      cancel_url: "https://yourdomain.com/cancel",
+      success_url: process.env.SUCCESS_URL,
+      cancel_url: process.env.CANCEL_URL
     });
 
     res.json({ id: session.id });
+
   } catch (err) {
     console.error("Stripe error:", err.message);
     res.status(500).json({ error: "Checkout failed" });
@@ -69,7 +90,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
 });
 
 // =========================
-// STRIPE WEBHOOK (SAFE)
+// STRIPE WEBHOOK (FIXED ORDER)
 // =========================
 app.post(
   "/api/stripe-webhook",
@@ -86,47 +107,36 @@ app.post(
         process.env.STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
-      console.error("Stripe signature error:", err.message);
-      return res.status(400).send("Invalid webhook");
+      return res.status(400).send("Invalid signature");
     }
 
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      const { email } = session.metadata || {};
-      const customerId = session.customer;
+    try {
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object;
+        const { email } = session.metadata || {};
 
-      if (email) {
-        await supabase
-          .from("contractors")
-          .update({
-            active: true,
-            stripe_customer_id: customerId,
-          })
-          .eq("email", email);
-
-        console.log("✅ Contractor activated:", email);
+        if (email) {
+          await supabase
+            .from("contractors")
+            .update({
+              active: true,
+              stripe_customer_id: session.customer
+            })
+            .eq("email", email);
+        }
       }
-    }
 
-    res.json({ received: true });
+      res.json({ received: true });
+
+    } catch (err) {
+      console.error("Webhook error:", err.message);
+      res.status(500).json({ error: "Webhook failed" });
+    }
   }
 );
 
 // =========================
-// LEAD SCORING (SERVER SIDE)
-// =========================
-function scoreLead(issue = "") {
-  const text = issue.toLowerCase();
-
-  if (text.includes("leak")) return 95;
-  if (text.includes("storm")) return 90;
-  if (text.includes("replacement")) return 85;
-
-  return 75;
-}
-
-// =========================
-// NEW LEAD (SCALED ROUTER)
+// NEW LEAD ROUTER (SCALABLE)
 // =========================
 app.post("/api/new-lead", async (req, res) => {
   try {
@@ -139,55 +149,59 @@ app.post("/api/new-lead", async (req, res) => {
     const score = scoreLead(issue);
 
     // 1. Save lead
-    const { data: lead } = await supabase
+    const { data: lead, error } = await supabase
       .from("homeowner_leads")
       .insert([{ name, phone, city, issue, score }])
       .select()
       .single();
 
-    // 2. Get active contractors
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    // 2. Get contractors (fair distribution)
     const { data: contractors } = await supabase
       .from("contractors")
       .select("*")
       .eq("city", city)
       .eq("active", true)
-      .order("leads_received", { ascending: true }); // FAIR DISTRIBUTION
+      .order("leads_received", { ascending: true });
 
     if (!contractors?.length) {
-      return res.json({ success: true, message: "No contractors available" });
+      return res.json({ success: true, message: "No contractors" });
     }
 
-    // 3. Pick BEST AVAILABLE contractor
     const contractor = contractors.find(
-      (c) => (c.leads_received || 0) < (c.max_leads || 20)
+      c => (c.leads_received || 0) < (c.max_leads || 20)
     );
 
     if (!contractor) {
-      return res.json({ success: true, message: "All contractors full" });
+      return res.json({ success: true, message: "All full" });
     }
 
-    // 4. Async SMS (non-blocking future scaling upgrade ready)
+    // 3. Async SMS (NON BLOCKING)
     fetch(process.env.SMS_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to: contractor.phone,
-        message: `🔥 Lead (${score}/100)\n📍 ${city}\n🛠️ ${issue}\n📞 ${phone}`,
-      }),
+        message: `🔥 Lead ${score}/100\n${city}\n${issue}\n${phone}`
+      })
     }).catch(console.error);
 
-    // 5. Update contractor usage safely
+    // 4. Update usage
     await supabase
       .from("contractors")
       .update({
-        leads_received: (contractor.leads_received || 0) + 1,
+        leads_received: (contractor.leads_received || 0) + 1
       })
       .eq("id", contractor.id);
 
-    return res.json({ success: true, routed: contractor.phone });
+    res.json({ success: true, routed: true });
+
   } catch (err) {
-    console.error("Lead error:", err.message);
-    return res.status(500).json({ error: "Lead routing failed" });
+    console.error(err);
+    res.status(500).json({ error: "Lead routing failed" });
   }
 });
 
@@ -197,5 +211,5 @@ app.post("/api/new-lead", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 RoofFlow scaled backend running on ${PORT}`);
+  console.log(`🚀 RoofFlow running on port ${PORT}`);
 });

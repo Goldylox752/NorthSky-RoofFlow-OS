@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RoofFlow AI | Automated Roofing Pipeline</title>
 
-<script src="https://js.stripe.com/v3/"></script>
-
 <style>
 body{
   margin:0;
@@ -96,7 +94,6 @@ p{color:#cbd5f5;line-height:1.5}
 <!-- LIVE FEED -->
 <section class="section">
 <h2>🔥 Live Lead Activity</h2>
-
 <div id="feed"></div>
 </section>
 
@@ -121,32 +118,6 @@ p{color:#cbd5f5;line-height:1.5}
 </div>
 </section>
 
-<!-- COMPARISON -->
-<section class="section">
-<h2>Why RoofFlow Wins</h2>
-<div class="grid">
-
-<div class="card">
-<b>Google Ads</b>
-<p>$2,000–$5,000/month</p>
-<p>Unpredictable results</p>
-</div>
-
-<div class="card">
-<b>Lead Platforms</b>
-<p>$30–$100 per lead</p>
-<p>Shared with competitors</p>
-</div>
-
-<div class="card">
-<b>RoofFlow AI</b>
-<p>$497/month</p>
-<p>Automated exclusive pipeline</p>
-</div>
-
-</div>
-</section>
-
 <!-- PRICING -->
 <section class="section">
 <h2>$497/month</h2>
@@ -157,39 +128,33 @@ p{color:#cbd5f5;line-height:1.5}
 </div>
 
 <script>
-const stripe = Stripe("pk_test_YOUR_PUBLIC_KEY");
-
-// STEP REVEAL
+// ===== SHOW FORM =====
 function showStep(){
   document.getElementById("stepSection").style.display = "block";
   window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
 }
 
-// STRIPE CHECKOUT FIXED
-async function startCheckout(){
-  try {
-    const city = document.getElementById("city").value;
-    const type = document.getElementById("type").value;
+// ===== STRIPE PAYMENT LINK (FIXED - NO BACKEND NEEDED) =====
+function startCheckout(){
+  const city = document.getElementById("city").value;
+  const type = document.getElementById("type").value;
 
-    const res = await fetch("/api/create-checkout-session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ city, type })
-    });
+  // store intent (optional tracking)
+  localStorage.setItem("lead_city", city);
+  localStorage.setItem("lead_type", type);
 
-    const data = await res.json();
+  // button UX
+  const btn = document.querySelector("#stepSection .btn");
+  btn.innerText = "Redirecting...";
+  btn.disabled = true;
 
-    if (!data.id) throw new Error("No session ID");
-
-    await stripe.redirectToCheckout({ sessionId: data.id });
-
-  } catch (err) {
-    alert("Checkout error. Try again.");
-    console.error(err);
-  }
+  // redirect to Stripe Payment Link
+  setTimeout(() => {
+    window.location.href = "https://buy.stripe.com/test_YOUR_LINK";
+  }, 600);
 }
 
-// LIVE FEED (SIMULATED)
+// ===== LIVE FEED =====
 const cities = ["Dallas", "Houston", "Calgary", "Toronto", "Phoenix"];
 const types = ["Roof Leak", "Storm Damage", "Inspection Request", "Roof Replacement"];
 

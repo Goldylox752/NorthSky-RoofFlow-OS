@@ -1,3 +1,49 @@
+async function submitLead(){
+  const name = document.getElementById("home_name").value.trim();
+  const phone = document.getElementById("home_phone").value.trim();
+  const city = document.getElementById("home_city").value.trim();
+  const issue = document.getElementById("home_issue").value.trim();
+  const status = document.getElementById("leadStatus");
+
+  if(!name || !phone || !city){
+    status.innerText = "Please fill in required fields.";
+    return;
+  }
+
+  status.innerText = "Submitting...";
+
+  try {
+    // Save to Supabase
+    await supabase.from("homeowner_leads").insert([
+      {
+        name,
+        phone,
+        city,
+        issue,
+        created_at: new Date().toISOString()
+      }
+    ]);
+
+    // OPTIONAL: Discord notification (RECOMMENDED)
+    await fetch("YOUR_DISCORD_WEBHOOK_URL", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        content: `🚨 NEW ROOF LEAD\n👤 ${name}\n📍 ${city}\n🛠️ ${issue}\n📞 ${phone}`
+      })
+    });
+
+    status.innerText = "Submitted! A roofer will contact you shortly.";
+
+  } catch (err){
+    console.error(err);
+    status.innerText = "Error submitting lead.";
+  }
+}
+
+
 require("dotenv").config();
 
 const express = require("express");

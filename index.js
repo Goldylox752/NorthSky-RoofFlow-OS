@@ -9,6 +9,7 @@ const { createClient } = require("@supabase/supabase-js");
 // INIT
 // =========================
 const app = express();
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const supabase = createClient(
@@ -19,20 +20,23 @@ const supabase = createClient(
 // =========================
 // MIDDLEWARE
 // =========================
-// IMPORTANT: Stripe webhook must use raw body BEFORE JSON middleware
+
+// IMPORTANT:
+// Stripe webhook MUST come BEFORE express.json()
+// and MUST use raw body ONLY on that route
+
 app.post(
   "/api/stripe-webhook",
   bodyParser.raw({ type: "application/json" })
 );
 
-// JSON middleware for everything else
 app.use(express.json());
 
 // =========================
 // HEALTH CHECK
 // =========================
 app.get("/", (req, res) => {
-  res.send("RoofFlow AI SaaS Engine Running 🚀");
+  res.status(200).send("RoofFlow AI SaaS Engine Running 🚀");
 });
 
 // =========================
@@ -64,16 +68,18 @@ app.post("/api/create-checkout-session", async (req, res) => {
           quantity: 1,
         },
       ],
-      metadata: { email },
+      metadata: {
+        email,
+      },
       success_url: "https://yourdomain.com/success",
       cancel_url: "https://yourdomain.com/cancel",
     });
 
-    res.json({ id: session.id });
+    return res.json({ id: session.id });
 
   } catch (err) {
-    console.error("Checkout error:", err);
-    res.status(500).json({ error: "Failed to create checkout session" });
+    console.error("❌ Checkout session error:", err.message);
+    return res.status(500).json({ error: "Failed to create checkout session" });
   }
 });
 
@@ -85,6 +91,7 @@ app.post("/api/stripe-webhook", async (req, res) => {
 
   let event;
 
+  // Verify Stripe signature
   try {
     event = stripe.webhooks.constructEvent(
       req.body,
@@ -92,7 +99,7 @@ app.post("/api/stripe-webhook", async (req, res) => {
       process.env.STRIPE_WEBHOOK_SECRET
     );
   } catch (err) {
-    console.error("Webhook signature error:", err.message);
+    console.error("❌ Stripe webhook signature failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
@@ -102,48 +109,65 @@ app.post("/api/stripe-webhook", async (req, res) => {
     // =========================
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
+
       const email = session.metadata?.email;
 
       if (!email) {
-        return res.json({ received: true, warning: "No email in metadata" });
+        console.warn("⚠️ Missing email in Stripe metadata");
+        return res.json({ received: true });
       }
 
-      // Check tenant
-      const { data: existing, error: fetchError } = await supabase
+      const customerId = session.customer;
+
+      // Check if tenant exists
+      const { data: existing, error } = await supabase
         .from("tenants")
         .select("id")
         .eq("email", email)
         .maybeSingle();
 
-      if (fetchError) {
-        console.error("Supabase fetch error:", fetchError);
+      if (error) {
+        console.error("❌ Supabase fetch error:", error.message);
       }
 
       if (existing) {
-        await supabase
+        // Update existing tenant
+        const { error: updateError } = await supabase
           .from("tenants")
           .update({
             status: "active",
-            stripe_customer_id: session.customer,
+            stripe_customer_id: customerId,
           })
           .eq("email", email);
+
+        if (updateError) {
+          console.error("❌ Supabase update error:", updateError.message);
+        }
+
       } else {
-        await supabase.from("tenants").insert([
-          {
-            email,
-            stripe_customer_id: session.customer,
-            plan: "growth",
-            status: "active",
-          },
-        ]);
+        // Create new tenant
+        const { error: insertError } = await supabase
+          .from("tenants")
+          .insert([
+            {
+              email,
+              stripe_customer_id: customerId,
+              plan: "growth",
+              status: "active",
+            },
+          ]);
+
+        if (insertError) {
+          console.error("❌ Supabase insert error:", insertError.message);
+        }
       }
     }
 
-    res.json({ received: true });
+    return res.json({ received: true });
 
   } catch (err) {
-    console.error("Webhook processing error:", err);
-    res.status(500).json({ error: "Webhook handler failed" });
+    console.error("❌ Webhook processing error:", err.message);
+    return res.status(500).json({ error: "Webhook handler failed" });
   }
 });
 

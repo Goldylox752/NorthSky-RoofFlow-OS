@@ -1,0 +1,204 @@
+<script>
+// =========================
+// CONFIG
+// =========================
+const supabase = window.supabase?.createClient(
+  "YOUR_SUPABASE_URL",
+  "YOUR_SUPABASE_ANON_KEY"
+);
+
+// Stripe init (safe guard)
+const stripe = window.Stripe ? Stripe("YOUR_STRIPE_KEY") : null;
+
+// =========================
+// UI HELPERS
+// =========================
+function showStep() {
+  const el = document.getElementById("stepSection");
+  if (el) el.style.display = "block";
+}
+
+// =========================
+// LEAD SCORING
+// =========================
+function scoreLead(issue = "") {
+  const text = issue.toLowerCase();
+
+  if (text.includes("leak")) return 95;
+  if (text.includes("storm")) return 90;
+  if (text.includes("replacement")) return 85;
+
+  return 75;
+}
+
+// =========================
+// SUBMIT LEAD (ROBUST)
+// =========================
+async function submitLead() {
+  const nameEl = document.getElementById("h_name");
+  const phoneEl = document.getElementById("h_phone");
+  const cityEl = document.getElementById("h_city");
+  const issueEl = document.getElementById("h_issue");
+  const status = document.getElementById("leadStatus");
+
+  if (!status) return;
+
+  const name = nameEl?.value?.trim();
+  const phone = phoneEl?.value?.trim();
+  const city = cityEl?.value?.trim();
+  const issue = issueEl?.value?.trim() || "";
+
+  if (!name || !phone || !city) {
+    status.innerText = "Please fill required fields.";
+    return;
+  }
+
+  status.innerText = "Submitting...";
+
+  try {
+    const score = scoreLead(issue);
+
+    const res = await fetch("/api/new-lead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, phone, city, issue, score })
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data.error || "Lead submission failed");
+    }
+
+    // Optional webhook (non-blocking)
+    fetch("YOUR_DISCORD_WEBHOOK_URL", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: `🚨 NEW LEAD (${score})\n📍 ${city}\n🛠️ ${issue || "N/A"}`
+      })
+    }).catch(() => {});
+
+    status.innerText = "Success! A contractor will contact you shortly.";
+
+    // Reset safely
+    if (nameEl) nameEl.value = "";
+    if (phoneEl) phoneEl.value = "";
+    if (cityEl) cityEl.value = "";
+    if (issueEl) issueEl.value = "";
+
+  } catch (err) {
+    console.error("submitLead error:", err);
+    status.innerText = "Failed to submit lead. Please try again.";
+  }
+}
+
+// =========================
+// CONTRACTOR SIGNUP
+// =========================
+async function registerContractor() {
+  const nameEl = document.getElementById("c_name");
+  const phoneEl = document.getElementById("c_phone");
+  const cityEl = document.getElementById("c_city");
+  const status = document.getElementById("status");
+
+  if (!status) return;
+
+  const name = nameEl?.value?.trim();
+  const phone = phoneEl?.value?.trim();
+  const city = cityEl?.value?.trim();
+
+  if (!name || !phone || !city) {
+    status.innerText = "Please fill all fields.";
+    return;
+  }
+
+  if (!stripe) {
+    status.innerText = "Stripe not initialized.";
+    return;
+  }
+
+  status.innerText = "Redirecting to checkout...";
+
+  try {
+    const res = await fetch("/api/create-checkout-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: `${phone}@roofflow.local`,
+        name,
+        phone,
+        city
+      })
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data.error || "Checkout failed");
+    }
+
+    await stripe.redirectToCheckout({ sessionId: data.id });
+
+  } catch (err) {
+    console.error("registerContractor error:", err);
+    status.innerText = "Checkout failed. Try again.";
+  }
+}
+
+// =========================
+// ADMIN DASHBOARD (OPTIMIZED)
+// =========================
+let dashboardLock = false;
+
+async function loadDashboard() {
+  if (dashboardLock) return;
+  dashboardLock = true;
+
+  try {
+    const [leadStats, contractorStats, leadsRes] = await Promise.all([
+      supabase.from("homeowner_leads").select("*", { count: "exact", head: true }),
+      supabase.from("contractors").select("*", { count: "exact", head: true }),
+      supabase.from("homeowner_leads")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(5)
+    ]);
+
+    const admin = document.getElementById("admin");
+    if (!admin) return;
+
+    const leadCount = leadStats?.count || 0;
+    const contractorCount = contractorStats?.count || 0;
+    const leads = leadsRes?.data || [];
+
+    admin.innerHTML = `
+      <div class="card">📈 Leads: ${leadCount}</div>
+      <div class="card">👷 Contractors: ${contractorCount}</div>
+    `;
+
+    for (const l of leads) {
+      const div = document.createElement("div");
+      div.className = "card";
+      div.innerHTML = `
+        📍 ${l.city || "N/A"}<br>
+        🛠️ ${l.issue || "N/A"}<br>
+        ⭐ Score: ${l.score ?? "-"}<br>
+        📞 ${l.phone || "N/A"}
+      `;
+      admin.appendChild(div);
+    }
+
+  } catch (err) {
+    console.error("Dashboard error:", err);
+  } finally {
+    dashboardLock = false;
+  }
+}
+
+// =========================
+// INIT
+// =========================
+loadDashboard();
+setInterval(loadDashboard, 7000);
+</script>

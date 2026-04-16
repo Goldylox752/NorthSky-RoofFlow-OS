@@ -1,3 +1,99 @@
+import express from "express";
+import cors from "cors";
+import rateLimit from "express-rate-limit";
+import { createClient } from "@supabase/supabase-js";
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// 🔒 Rate limit (anti-spam)
+app.use(rateLimit({
+  windowMs: 60 * 1000,
+  max: 10
+}));
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
+
+const API_KEY = process.env.API_KEY;
+
+// 🔐 API protection
+app.use((req, res, next) => {
+  if (req.headers["x-api-key"] !== API_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+});
+
+// 🧠 LEAD SCORING ENGINE
+function scoreLead({ city, issue, timeline }) {
+  let score = 0;
+
+  if (timeline === "today") score += 40;
+  if (timeline === "this_week") score += 25;
+
+  if (issue?.includes("leak")) score += 30;
+  if (issue?.includes("replacement")) score += 20;
+
+  if (city?.toLowerCase().includes("edmonton")) score += 20;
+  if (city?.toLowerCase().includes("calgary")) score += 20;
+
+  return score;
+}
+
+// 🚀 MAIN ENDPOINT
+app.post("/api/new-lead", async (req, res) => {
+  try {
+    const { name, phone, city, issue, timeline } = req.body;
+
+    if (!name || !phone || !city) {
+      return res.status(400).json({ error: "Missing fields" });
+    }
+
+    const score = scoreLead({ city, issue, timeline });
+
+    const lead = {
+      name,
+      phone,
+      city,
+      issue,
+      timeline,
+      score,
+      created_at: new Date()
+    };
+
+    // 💾 Save lead
+    const { error } = await supabase
+      .from("leads")
+      .insert([lead]);
+
+    if (error) throw error;
+
+    // 🚨 DISPATCH LOGIC
+    if (score >= 60) {
+      console.log("🔥 HOT LEAD → send SMS to contractors");
+      // Twilio trigger here
+    } else if (score >= 30) {
+      console.log("⚡ WARM LEAD → email only");
+    } else {
+      console.log("🧊 COLD LEAD → stored only");
+    }
+
+    res.json({ success: true, score });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.listen(3000, () => console.log("SaaS engine running"));
+
+
+
 require("dotenv").config();
 
 const express = require("express");

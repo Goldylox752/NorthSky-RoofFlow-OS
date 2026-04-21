@@ -1,275 +1,678 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>NorthSky AI | Roofing Intelligence Platform</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-<title>NorthSky AI | Roofing Territory System</title>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: radial-gradient(ellipse at 30% 20%, #0a0f2a, #02040e);
+      color: #eef2ff;
+      min-height: 100vh;
+      line-height: 1.5;
+    }
 
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    /* glass morphism components */
+    .glass-card {
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 2rem;
+      box-shadow: 0 20px 35px -12px rgba(0, 0, 0, 0.4);
+    }
 
-<style>
-*{margin:0;padding:0;box-sizing:border-box;font-family:'Inter',sans-serif;}
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
 
-body{
-  background: radial-gradient(circle at top, #111827, #0b1220);
-  color:#fff;
-}
+    /* navigation */
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.2rem 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .logo {
+      font-size: 1.6rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff, #60a5fa);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      letter-spacing: -0.3px;
+    }
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: rgba(255,255,255,0.05);
+      padding: 0.4rem 1rem;
+      border-radius: 3rem;
+      font-size: 0.85rem;
+    }
+    .logout-btn {
+      background: none;
+      border: 1px solid rgba(255,100,100,0.5);
+      padding: 0.3rem 0.9rem;
+      border-radius: 2rem;
+      font-size: 0.7rem;
+      font-weight: 500;
+      cursor: pointer;
+      color: #fca5a5;
+      transition: 0.2s;
+    }
+    .logout-btn:hover {
+      background: #ef444420;
+      border-color: #ef4444;
+    }
 
-nav{
-  display:flex;
-  justify-content:space-between;
-  padding:20px 40px;
-  border-bottom:1px solid rgba(255,255,255,0.08);
-}
+    /* hero */
+    .hero {
+      text-align: center;
+      padding: 3rem 1rem 2rem;
+    }
+    .hero h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(to right, #ffffff, #a5b4fc);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero p {
+      opacity: 0.7;
+      max-width: 600px;
+      margin: 1rem auto 0;
+    }
 
-.logo{font-weight:700;font-size:20px;}
+    /* auth panel */
+    .auth-panel {
+      max-width: 460px;
+      margin: 2rem auto;
+      padding: 2rem;
+      border-radius: 1.8rem;
+      background: rgba(10, 15, 35, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .input-group {
+      margin-bottom: 1.2rem;
+    }
+    input, .stripe-button-stub {
+      width: 100%;
+      padding: 0.9rem 1rem;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 1.2rem;
+      color: white;
+      font-size: 0.95rem;
+      transition: 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 2px #4f46e540;
+    }
+    button {
+      width: 100%;
+      padding: 0.9rem;
+      background: #4f46e5;
+      border: none;
+      border-radius: 1.2rem;
+      font-weight: 700;
+      color: white;
+      cursor: pointer;
+      transition: 0.2s;
+      font-size: 0.95rem;
+    }
+    button:hover {
+      background: #6366f1;
+      transform: scale(0.98);
+    }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid #4f46e5;
+      color: #c7d2fe;
+    }
+    .small-text {
+      font-size: 0.7rem;
+      opacity: 0.6;
+      margin-top: 1rem;
+      text-align: center;
+    }
+    .error-msg {
+      color: #f87171;
+      font-size: 0.75rem;
+      margin-top: 0.4rem;
+    }
+    .success-msg {
+      color: #4ade80;
+    }
 
-.hero{
-  text-align:center;
-  padding:60px 20px 20px;
-  max-width:900px;
-  margin:auto;
-}
+    /* paywall plans */
+    .plans-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.8rem;
+      justify-content: center;
+      margin: 2rem 0;
+    }
+    .plan-card {
+      flex: 1;
+      min-width: 240px;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(8px);
+      border-radius: 1.8rem;
+      padding: 1.6rem;
+      border: 1px solid rgba(255,255,255,0.08);
+      transition: all 0.2s;
+    }
+    .plan-card.pro {
+      border: 2px solid #4f46e5;
+      transform: scale(1.02);
+      background: rgba(79, 70, 229, 0.1);
+    }
+    .plan-card.elite {
+      border: 2px solid #22c55e;
+    }
+    .plan-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .plan-price {
+      font-size: 1.8rem;
+      font-weight: 800;
+      margin: 0.8rem 0;
+    }
+    .plan-features {
+      font-size: 0.8rem;
+      opacity: 0.8;
+      margin: 1rem 0;
+      list-style: none;
+    }
+    .plan-features li {
+      margin: 0.4rem 0;
+    }
 
-.hero h1{font-size:44px;margin-bottom:15px;}
-.hero p{opacity:0.75;margin-bottom:15px;}
-
-.login-box{
-  max-width:400px;
-  margin:20px auto;
-  background:#111827;
-  padding:20px;
-  border-radius:12px;
-}
-
-.section{
-  text-align:center;
-  padding:60px 20px;
-}
-
-.paywall{max-width:750px;margin:auto;}
-
-.plan{
-  background:#111827;
-  padding:22px;
-  margin:15px 0;
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,0.08);
-  text-align:left;
-}
-
-.plan.pro{border:2px solid #4f46e5;transform:scale(1.02);}
-.plan.elite{border:2px solid #22c55e;}
-
-.price{font-size:20px;font-weight:700;margin-bottom:10px;}
-
-button{
-  width:100%;
-  padding:14px;
-  border:none;
-  border-radius:8px;
-  background:#4f46e5;
-  color:white;
-  font-weight:600;
-  cursor:pointer;
-}
-
-input{
-  width:100%;
-  padding:12px;
-  margin-bottom:12px;
-  border-radius:8px;
-  border:none;
-  background:#1f2937;
-  color:#fff;
-}
-
-.hidden{display:none;}
-
-.form-box{
-  background:#111827;
-  padding:35px;
-  border-radius:14px;
-  max-width:520px;
-  margin:auto;
-}
-
-.small{
-  font-size:12px;
-  opacity:0.6;
-}
-</style>
+    /* app dashboard */
+    .dashboard {
+      max-width: 700px;
+      margin: 2rem auto;
+      padding: 2rem;
+      border-radius: 2rem;
+    }
+    .dashboard h2 {
+      font-size: 1.8rem;
+      margin-bottom: 1rem;
+    }
+    .status-badge {
+      background: #22c55e20;
+      border: 1px solid #22c55e;
+      border-radius: 2rem;
+      padding: 0.2rem 1rem;
+      font-size: 0.7rem;
+      display: inline-block;
+      margin-bottom: 1rem;
+    }
+    .refresh-sub {
+      background: #334155;
+      margin-top: 0.5rem;
+      font-size: 0.8rem;
+    }
+    .hidden {
+      display: none;
+    }
+    .loader {
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top: 2px solid #4f46e5;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+      margin-right: 6px;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    footer {
+      text-align: center;
+      padding: 2rem;
+      opacity: 0.5;
+      font-size: 0.7rem;
+    }
+    @media (max-width: 720px) {
+      .hero h1 { font-size: 2rem; }
+      .plans-grid { flex-direction: column; }
+    }
+  </style>
 </head>
-
 <body>
 
-<nav>
-  <div class="logo">NorthSky AI</div>
-</nav>
+<div class="container">
+  <nav>
+    <div class="logo">⛅ NorthSky AI</div>
+    <div id="navUserArea"></div>
+  </nav>
 
-<!-- HERO -->
-<section class="hero">
-  <h1>Turn Roof Inspections Into $1K–$5K Jobs</h1>
-  <p>AI-powered leads + drone system built for contractors</p>
-</section>
+  <div class="hero">
+    <h1>Turn Roof Inspections Into $1K–$5K Jobs</h1>
+    <p>AI‑powered leads + drone intelligence · exclusive territories for certified contractors</p>
+  </div>
 
-<!-- 🔐 LOGIN -->
-<div class="login-box">
-  <input type="email" id="loginEmail" placeholder="Enter your email">
-  <button onclick="login()">Login / Access Dashboard</button>
-  <p class="small">Use the same email you used at checkout</p>
+  <!-- 🔐 LOGIN / AUTH SECTION -->
+  <div id="authSection" class="auth-panel">
+    <h3 style="margin-bottom: 1rem; text-align: center;">🔑 Access your territory hub</h3>
+    <div class="input-group">
+      <input type="email" id="loginEmail" placeholder="Contractor email address">
+    </div>
+    <button id="sendMagicLinkBtn">📩 Send magic link</button>
+    <div id="authMessage" class="small-text" style="margin-top: 1rem;"></div>
+    <div class="small-text">✨ Use the same email you used for purchase. A secure login link will be sent.</div>
+  </div>
+
+  <!-- 💰 PAYWALL (subscription plans) -->
+  <div id="paywallSection" class="hidden" style="margin: 2rem 0;">
+    <h2 style="text-align: center;">🚀 Unlock your territory license</h2>
+    <div class="plans-grid">
+      <!-- Starter plan -->
+      <div class="plan-card">
+        <div class="plan-title">Starter</div>
+        <div class="plan-price">$99 <span style="font-size: 0.9rem;">/ month</span></div>
+        <ul class="plan-features">
+          <li>✓ 5 inspections / month</li>
+          <li>✓ Basic AI reports</li>
+          <li>✓ Email support</li>
+        </ul>
+        <a href="https://buy.stripe.com/dRmfZae1d2eoeofgLK2ZO0C?success_url=https://YOURDOMAIN.com/success.html" target="_blank" class="stripe-link">
+          <button>Get Starter</button>
+        </a>
+      </div>
+      <!-- Pro territory -->
+      <div class="plan-card pro">
+        <div class="plan-title">Pro Territory</div>
+        <div class="plan-price">$299 <span style="font-size: 0.9rem;">/ month</span></div>
+        <ul class="plan-features">
+          <li>✓ 20 inspections / month</li>
+          <li>✓ Drone route optimization</li>
+          <li>✓ Priority lead scoring</li>
+          <li>✓ Territory lock (radius)</li>
+        </ul>
+        <a href="https://buy.stripe.com/dRm28k8GTaKU1Btcvu2ZO0D?success_url=https://YOURDOMAIN.com/success.html" target="_blank" class="stripe-link">
+          <button>Upgrade to Pro</button>
+        </a>
+      </div>
+      <!-- Elite territory -->
+      <div class="plan-card elite">
+        <div class="plan-title">Elite Territory</div>
+        <div class="plan-price">$999 <span style="font-size: 0.9rem;">/ month</span></div>
+        <ul class="plan-features">
+          <li>✓ Unlimited inspections</li>
+          <li>✓ Full AI auditor suite</li>
+          <li>✓ Dedicated account manager</li>
+          <li>✓ Exclusive regional monopoly</li>
+        </ul>
+        <a href="https://buy.stripe.com/aFaeV6cX97yIfsjcvu2ZO0E?success_url=https://YOURDOMAIN.com/success.html" target="_blank" class="stripe-link">
+          <button>Unlock Elite</button>
+        </a>
+      </div>
+    </div>
+    <div class="small-text" style="text-align: center; margin-top: 1rem;">
+      ⚡ After payment, click <strong>"Verify payment & refresh"</strong> below (or the link in your email will auto-upgrade).
+    </div>
+    <div style="display: flex; justify-content: center; margin-top: 0.5rem;">
+      <button id="manualRefreshPlanBtn" class="refresh-sub" style="width: auto; padding: 0.6rem 1.5rem;">⟳ Refresh subscription status</button>
+    </div>
+    <div id="paywallMessage" class="small-text" style="text-align: center; margin-top: 0.5rem;"></div>
+  </div>
+
+  <!-- 🧠 MAIN APP (locked territory system) -->
+  <div id="appSection" class="dashboard glass-card hidden">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+      <h2>🏆 Lock Your Territory</h2>
+      <span id="planBadge" class="status-badge">—</span>
+    </div>
+    <p style="margin-bottom: 1.5rem; opacity: 0.7;">Enter property details to claim inspection lead & send to drone dispatch.</p>
+    <div class="input-group">
+      <input type="text" id="leadName" placeholder="Property owner / full name">
+    </div>
+    <div class="input-group">
+      <input type="email" id="leadEmail" placeholder="Client email">
+    </div>
+    <div class="input-group">
+      <input type="text" id="leadCity" placeholder="City, State or ZIP">
+    </div>
+    <button id="submitLeadBtn">🔍 Check availability & reserve territory</button>
+    <div id="leadStatus" style="margin-top: 1rem; font-size: 0.85rem; text-align: center;"></div>
+    <hr style="margin: 1.8rem 0; border-color: rgba(255,255,255,0.1);">
+    <div style="font-size: 0.75rem; text-align: center; opacity: 0.6;">
+      <i class="info-icon">⛅</i> Each submission reserves an exclusive lead in your territory. Pro+ users get priority routing.
+    </div>
+  </div>
+
+  <footer>
+    NorthSky AI — contractor intelligence platform. ⚡ Secure & encrypted.
+  </footer>
 </div>
 
-<!-- 🔒 PAYWALL -->
-<section id="paywall" class="section paywall">
-
-  <h2>Unlock Your Territory</h2>
-
-  <div class="plan">
-    <h3>Starter</h3>
-    <div class="price">$99</div>
-    <a href="https://buy.stripe.com/dRmfZae1d2eoeofgLK2ZO0C?success_url=https://YOURDOMAIN.com/success.html">
-      <button>Get Started</button>
-    </a>
-  </div>
-
-  <div class="plan pro">
-    <h3>Pro Territory</h3>
-    <div class="price">$299</div>
-    <a href="https://buy.stripe.com/dRm28k8GTaKU1Btcvu2ZO0D?success_url=https://YOURDOMAIN.com/success.html">
-      <button>Upgrade to Pro</button>
-    </a>
-  </div>
-
-  <div class="plan elite">
-    <h3>Elite Territory</h3>
-    <div class="price">$999</div>
-    <a href="https://buy.stripe.com/aFaeV6cX97yIfsjcvu2ZO0E?success_url=https://YOURDOMAIN.com/success.html">
-      <button>Unlock Elite</button>
-    </a>
-  </div>
-
-</section>
-
-<!-- 🔓 APP -->
-<section id="app" class="section hidden">
-  <div class="form-box">
-    <h2>Lock Your Territory</h2>
-
-    <input type="text" id="name" placeholder="Full Name">
-    <input type="email" id="email" placeholder="Email">
-    <input type="text" id="city" placeholder="City / Region">
-
-    <button onclick="submitLead()">Check Availability</button>
-    <div id="status"></div>
-  </div>
-</section>
-
 <script>
+  // ======================== CONFIGURATION ========================
+  // 🔧 REPLACE WITH YOUR SUPABASE CREDENTIALS (from project settings)
+  const SUPABASE_URL = "YOUR_SUPABASE_URL";        // e.g. "https://xxxxx.supabase.co"
+  const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
 
-/* ================= INIT ================= */
-const supabase = window.supabase.createClient(
-  "YOUR_SUPABASE_URL",
-  "YOUR_SUPABASE_ANON_KEY"
-);
+  // Detect if keys are still placeholders
+  const isSupabaseConfigured = SUPABASE_URL !== "YOUR_SUPABASE_URL" && SUPABASE_ANON_KEY !== "YOUR_SUPABASE_ANON_KEY";
 
-let currentUser = null;
-
-/* ================= LOGIN ================= */
-async function login(){
-
-  const email = document.getElementById("loginEmail").value;
-
-  if(!email){
-    alert("Enter email");
-    return;
+  let supabase;
+  if (isSupabaseConfigured) {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } else {
+    console.warn("⚠️ Supabase credentials missing. Using demo mode (localStorage only).");
   }
 
-  const { error } = await supabase.auth.signInWithOtp({ email });
+  // Global state
+  let currentSession = null;     // supabase user object
+  let currentPlan = null;        // 'starter', 'pro', 'elite'
+  let isPaid = false;
 
-  if(error){
-    alert("Login failed");
-    return;
+  // DOM elements
+  const authSection = document.getElementById("authSection");
+  const paywallSection = document.getElementById("paywallSection");
+  const appSection = document.getElementById("appSection");
+  const navUserArea = document.getElementById("navUserArea");
+  const authMessageDiv = document.getElementById("authMessage");
+  const paywallMessageDiv = document.getElementById("paywallMessage");
+  const leadStatusDiv = document.getElementById("leadStatus");
+  const planBadgeSpan = document.getElementById("planBadge");
+
+  // Helper: update UI based on login + subscription status
+  async function refreshUIAfterAuth() {
+    if (!currentSession) {
+      // not logged in
+      authSection.classList.remove("hidden");
+      paywallSection.classList.add("hidden");
+      appSection.classList.add("hidden");
+      renderNavLoggedOut();
+      return;
+    }
+
+    // user logged in: fetch subscription from DB
+    await fetchUserSubscription();
+
+    if (isPaid && currentPlan) {
+      // fully active: show main app
+      authSection.classList.add("hidden");
+      paywallSection.classList.add("hidden");
+      appSection.classList.remove("hidden");
+      renderNavLoggedIn();
+      updatePlanBadge();
+    } else {
+      // logged in but no active plan: show paywall + upgrade options
+      authSection.classList.add("hidden");
+      paywallSection.classList.remove("hidden");
+      appSection.classList.add("hidden");
+      renderNavLoggedIn();
+      paywallMessageDiv.innerHTML = "⚠️ No active subscription. Choose a plan below or refresh after payment.";
+    }
   }
 
-  alert("Check your email for login link");
-}
-
-/* ================= AUTH CHECK ================= */
-window.onload = async function(){
-
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if(!user) return;
-
-  currentUser = user;
-
-  const { data } = await supabase
-    .from("users")
-    .select("paid, plan")
-    .eq("email", user.email)
-    .single();
-
-  if(!data || !data.paid) return;
-
-  // unlock
-  document.getElementById("paywall").style.display = "none";
-  document.getElementById("app").classList.remove("hidden");
-};
-
-/* ================= SESSION ================= */
-function getSessionId(){
-  let id = localStorage.getItem("session_id");
-  if(!id){
-    id = crypto.randomUUID();
-    localStorage.setItem("session_id", id);
-  }
-  return id;
-}
-
-/* ================= LEAD ================= */
-async function submitLead(){
-
-  if(!currentUser){
-    alert("Login required");
-    return;
+  function renderNavLoggedOut() {
+    navUserArea.innerHTML = `<div class="user-info">🔓 Not logged in</div>`;
   }
 
-  const name = document.getElementById("name").value;
-  const email = document.getElementById("email").value;
-  const city = document.getElementById("city").value;
-  const status = document.getElementById("status");
-
-  if(!name || !email || !city){
-    status.innerText = "Fill all fields.";
-    return;
+  function renderNavLoggedIn() {
+    if (!currentSession) return;
+    const emailShort = currentSession.email?.split('@')[0] || "user";
+    navUserArea.innerHTML = `
+      <div class="user-info">
+        <span>👤 ${emailShort}</span>
+        <button class="logout-btn" id="logoutBtn">Sign out</button>
+      </div>
+    `;
+    document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+      if (supabase) await supabase.auth.signOut();
+      localStorage.removeItem("ns_territory_session");
+      currentSession = null;
+      isPaid = false;
+      currentPlan = null;
+      refreshUIAfterAuth();
+    });
   }
 
-  status.innerText = "Saving...";
+  async function fetchUserSubscription() {
+    if (!supabase || !currentSession) return;
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("paid, plan")
+        .eq("email", currentSession.email)
+        .maybeSingle();
 
-  const { error } = await supabase.from("leads").insert([{
-    name,
-    email,
-    city,
-    user_email: currentUser.email,
-    session_id: getSessionId()
-  }]);
-
-  if(error){
-    status.innerText = "Error. Try again.";
-    return;
+      if (error && error.code !== "PGRST116") {
+        console.error("DB fetch error:", error);
+        isPaid = false;
+        return;
+      }
+      if (data) {
+        isPaid = !!data.paid;
+        currentPlan = data.plan || null;
+      } else {
+        // User not found in 'users' table: create a default unpaid record
+        const { error: insertError } = await supabase
+          .from("users")
+          .insert([{ email: currentSession.email, paid: false, plan: null }]);
+        if (insertError && insertError.code !== "23505") console.warn(insertError);
+        isPaid = false;
+        currentPlan = null;
+      }
+    } catch (err) {
+      console.warn("Subscription check failed", err);
+      isPaid = false;
+    }
   }
 
-  status.innerText = "Success — redirecting...";
+  function updatePlanBadge() {
+    if (!currentPlan) planBadgeSpan.innerText = "⚡ No active license";
+    else if (currentPlan === "pro") planBadgeSpan.innerText = "🏅 PRO TERRITORY ACTIVE";
+    else if (currentPlan === "elite") planBadgeSpan.innerText = "👑 ELITE TERRITORY · UNLIMITED";
+    else planBadgeSpan.innerText = "🌱 STARTER PLAN";
+  }
 
-  setTimeout(() => {
-    window.location.href = "https://northsky-drones.vercel.app?bundle=inspection-kit";
-  }, 1000);
-}
+  // Manual refresh (after Stripe payment)
+  async function manualRefreshSubscription() {
+    if (!supabase || !currentSession) {
+      if (paywallMessageDiv) paywallMessageDiv.innerText = "Please login first.";
+      return;
+    }
+    paywallMessageDiv.innerText = "⟳ Refreshing subscription...";
+    await fetchUserSubscription();
+    if (isPaid) {
+      paywallMessageDiv.innerHTML = "✅ Subscription active! Redirecting to dashboard...";
+      setTimeout(() => refreshUIAfterAuth(), 800);
+    } else {
+      paywallMessageDiv.innerHTML = "❌ No active plan yet. Complete payment or check email for confirmation.";
+    }
+  }
 
+  // Magic link login
+  async function sendMagicLink() {
+    const emailInput = document.getElementById("loginEmail");
+    const email = emailInput.value.trim();
+    if (!email) {
+      authMessageDiv.innerHTML = "<span class='error-msg'>Enter your email address</span>";
+      return;
+    }
+    if (!supabase) {
+      authMessageDiv.innerHTML = "<span class='error-msg'>Supabase not configured. Add credentials to enable auth.</span>";
+      return;
+    }
+    authMessageDiv.innerHTML = "<span>Sending magic link... <div class='loader' style='vertical-align:middle'></div></span>";
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email,
+      options: { emailRedirectTo: window.location.href }
+    });
+    if (error) {
+      authMessageDiv.innerHTML = `<span class='error-msg'>Error: ${error.message}</span>`;
+    } else {
+      authMessageDiv.innerHTML = "<span class='success-msg'>✨ Magic link sent! Check your inbox (spam too).</span>";
+    }
+  }
+
+  // Lead submission (territory lock)
+  async function submitLead() {
+    if (!currentSession) {
+      leadStatusDiv.innerHTML = "<span class='error-msg'>Please login first.</span>";
+      return;
+    }
+    if (!isPaid) {
+      leadStatusDiv.innerHTML = "<span class='error-msg'>Active subscription required to lock territory. Upgrade above.</span>";
+      return;
+    }
+    const name = document.getElementById("leadName").value.trim();
+    const email = document.getElementById("leadEmail").value.trim();
+    const city = document.getElementById("leadCity").value.trim();
+    if (!name || !email || !city) {
+      leadStatusDiv.innerHTML = "<span class='error-msg'>All fields required.</span>";
+      return;
+    }
+    leadStatusDiv.innerHTML = "<span>Reserving territory... <div class='loader'></div></span>";
+    // generate session ID for analytics
+    let sessionId = localStorage.getItem("ns_territory_session");
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      localStorage.setItem("ns_territory_session", sessionId);
+    }
+    // if supabase not configured: demo mode (store locally)
+    if (!supabase) {
+      // demo fallback
+      const lead = { name, email, city, user_email: currentSession.email, session_id: sessionId, timestamp: new Date().toISOString() };
+      let demoLeads = JSON.parse(localStorage.getItem("demo_leads") || "[]");
+      demoLeads.push(lead);
+      localStorage.setItem("demo_leads", JSON.stringify(demoLeads));
+      leadStatusDiv.innerHTML = "<span class='success-msg'>✅ Territory reserved (demo mode). Redirecting to drone portal...</span>";
+      setTimeout(() => {
+        window.location.href = "https://northsky-drones.vercel.app?bundle=inspection-kit";
+      }, 1200);
+      return;
+    }
+    // real supabase insert
+    const { error } = await supabase.from("leads").insert([{
+      name: name,
+      email: email,
+      city: city,
+      user_email: currentSession.email,
+      session_id: sessionId,
+      plan_at_submission: currentPlan || "unknown"
+    }]);
+    if (error) {
+      leadStatusDiv.innerHTML = `<span class='error-msg'>Database error: ${error.message}</span>`;
+    } else {
+      leadStatusDiv.innerHTML = "<span class='success-msg'>✔️ Territory locked! Redirecting to drone inspection suite...</span>";
+      setTimeout(() => {
+        window.location.href = "https://northsky-drones.vercel.app?bundle=inspection-kit";
+      }, 1200);
+    }
+  }
+
+  // ============= AUTH STATE LISTENER (Supabase) =============
+  async function initAuth() {
+    if (!supabase) {
+      // no backend: provide DEMO mode login for testing
+      authMessageDiv.innerHTML = "<div class='small-text' style='color:#facc15;'>⚠️ Supabase not configured — using demo login (no DB). Click 'Demo access' below.</div>";
+      const demoBtn = document.createElement("button");
+      demoBtn.innerText = "🔓 Demo Access (mock login)";
+      demoBtn.className = "btn-outline";
+      demoBtn.style.marginTop = "12px";
+      demoBtn.onclick = () => {
+        currentSession = { email: "demo@contractor.com", id: "demo-user" };
+        isPaid = true;
+        currentPlan = "pro";
+        refreshUIAfterAuth();
+      };
+      document.querySelector(".auth-panel")?.appendChild(demoBtn);
+      return;
+    }
+
+    // get current session
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      currentSession = user;
+      await fetchUserSubscription();
+      refreshUIAfterAuth();
+    } else {
+      refreshUIAfterAuth();
+    }
+
+    // listen for auth changes
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
+        currentSession = session.user;
+        await fetchUserSubscription();
+        refreshUIAfterAuth();
+      } else if (event === "SIGNED_OUT") {
+        currentSession = null;
+        isPaid = false;
+        currentPlan = null;
+        refreshUIAfterAuth();
+      }
+    });
+  }
+
+  // handle URL hash for email confirmation redirect
+  function handleRedirectFromEmail() {
+    if (!supabase) return;
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const accessToken = hashParams.get("access_token");
+    if (accessToken) {
+      supabase.auth.setSession({ access_token: accessToken, refresh_token: hashParams.get("refresh_token") || "" })
+        .then(({ error }) => {
+          if (error) console.warn(error);
+          else window.location.hash = "";
+        });
+    }
+  }
+
+  // attach event listeners
+  document.getElementById("sendMagicLinkBtn")?.addEventListener("click", sendMagicLink);
+  document.getElementById("manualRefreshPlanBtn")?.addEventListener("click", manualRefreshSubscription);
+  document.getElementById("submitLeadBtn")?.addEventListener("click", submitLead);
+
+  // If supabase missing, show fallback note but still allow demo flow
+  window.addEventListener("DOMContentLoaded", () => {
+    initAuth();
+    handleRedirectFromEmail();
+    // additional styling for Stripe links to open in new tab
+    document.querySelectorAll(".stripe-link").forEach(link => {
+      link.setAttribute("target", "_blank");
+    });
+    // inform user to update supabase keys
+    if (!isSupabaseConfigured) {
+      const infoDiv = document.createElement("div");
+      infoDiv.className = "small-text";
+      infoDiv.style.background = "#1e1b4b";
+      infoDiv.style.padding = "8px";
+      infoDiv.style.borderRadius = "12px";
+      infoDiv.style.margin = "10px auto";
+      infoDiv.style.textAlign = "center";
+      infoDiv.innerHTML = "⚙️ <strong>Setup required:</strong> Replace YOUR_SUPABASE_URL and YOUR_SUPABASE_ANON_KEY in the code.<br>Until then, use <strong>Demo Access</strong> button below.";
+      document.getElementById("authSection")?.appendChild(infoDiv);
+    }
+  });
 </script>
-
 </body>
 </html>

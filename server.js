@@ -1,31 +1,33 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 app.use(cors());
 app.use(express.json());
 
-// 👇 THIS serves your whole frontend
-app.use(express.static("public"));
+app.use(express.static(path.join(__dirname, "public")));
 
-// homepage
 app.get("/", (req, res) => {
-  res.sendFile("index.html", { root: "./public" });
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// apply page
 app.get("/apply", (req, res) => {
-  res.sendFile("apply.html", { root: "./public" });
+  res.sendFile(path.join(__dirname, "public", "apply.html"));
 });
 
-// API
 app.post("/api/apply", (req, res) => {
   console.log(req.body);
-
-  return res.json({ qualified: true });
+  res.json({ qualified: true });
 });
 
-app.listen(3000, () => {
-  console.log("Server running");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });

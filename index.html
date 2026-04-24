@@ -83,6 +83,15 @@ ul{padding-left:20px;opacity:.9}
   font-size:12px;
   margin-top:50px;
 }
+
+/* Sticky CTA */
+.sticky-cta{
+  position:fixed;
+  bottom:20px;
+  right:20px;
+  width:180px;
+  z-index:999;
+}
 </style>
 </head>
 
@@ -102,8 +111,10 @@ ul{padding-left:20px;opacity:.9}
     <b>Just qualified roofing appointments sent directly to you.</b>
   </p>
 
-  <!-- FIXED CTA -->
-  <a href="/apply/" class="btn">Apply For Your City</a>
+  <!-- CTA (tracked) -->
+  <a href="/apply/" class="btn" onclick="trackCTA('apply_click')">
+    Apply For Your City
+  </a>
 
   <p class="small">We only onboard a limited number of contractors per city.</p>
 </div>
@@ -153,11 +164,14 @@ ul{padding-left:20px;opacity:.9}
   </ul>
 </div>
 
-<!-- OFFER -->
+<!-- PRICING -->
 <div class="card" style="text-align:center">
   <h2>Simple Pricing</h2>
 
-  <p><b>$1,000 setup + $150 per booked job</b></p>
+  <p><b>Pay only when jobs are booked</b></p>
+  <p class="small">No monthly retainers. No shared leads. No ad waste.</p>
+
+  <p><b>$1,000 setup + $150 per confirmed appointment</b></p>
 
   <ul style="text-align:left;display:inline-block">
     <li>No contracts</li>
@@ -165,8 +179,9 @@ ul{padding-left:20px;opacity:.9}
     <li>Pay only for results</li>
   </ul>
 
-  <!-- FIXED CTA -->
-  <a href="/apply/" class="btn">Apply Now</a>
+  <a href="/apply/" class="btn" onclick="trackCTA('apply_click')">
+    Apply Now
+  </a>
 
   <p class="small">Most contractors receive first booked jobs within 3–7 days.</p>
 </div>
@@ -186,12 +201,12 @@ ul{padding-left:20px;opacity:.9}
   <h2>Limited Availability</h2>
 
   <p>
-    We only work with <b>3 contractors per city</b>.
-    <br/>
-    Once filled, we do not onboard competitors.
+    We currently limit onboarding per city to maintain lead quality.
   </p>
 
-  <a href="/apply/" class="btn">Apply For Your Spot</a>
+  <a href="/apply/" class="btn" onclick="trackCTA('apply_click')">
+    Apply For Your Spot
+  </a>
 </div>
 
 <!-- FINAL CTA -->
@@ -199,7 +214,9 @@ ul{padding-left:20px;opacity:.9}
   <h2>Want Consistent Roofing Jobs?</h2>
   <p>Apply below to see if your city is available.</p>
 
-  <a href="/apply/" class="btn">Apply Now</a>
+  <a href="/apply/" class="btn" onclick="trackCTA('apply_click')">
+    Apply Now
+  </a>
 </div>
 
 <div class="footer">
@@ -207,6 +224,38 @@ ul{padding-left:20px;opacity:.9}
 </div>
 
 </div>
+
+<!-- Sticky CTA -->
+<div class="sticky-cta">
+  <a class="btn" href="/apply/" onclick="trackCTA('sticky_apply_click')">
+    Apply Now
+  </a>
+</div>
+
+<!-- Tracking Scripts -->
+<script>
+function trackCTA(name){
+  fetch("/api/event", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      event: name,
+      page: window.location.pathname,
+      ts: Date.now()
+    })
+  });
+}
+
+// Scroll tracking
+window.addEventListener("scroll", () => {
+  let scroll = window.scrollY / document.body.scrollHeight;
+
+  if (scroll > 0.5 && !window.halfTracked) {
+    window.halfTracked = true;
+    trackCTA("scroll_50");
+  }
+});
+</script>
 
 </body>
 </html>

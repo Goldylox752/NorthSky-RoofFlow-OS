@@ -55,19 +55,12 @@ button {
   color: white;
   font-weight: 700;
   cursor: pointer;
-  transition: 0.2s;
 }
 
 button:hover {
   opacity: 0.95;
 }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Hidden honeypot spam trap */
 .hidden-field {
   display: none;
 }
@@ -79,47 +72,21 @@ button:disabled {
 }
 </style>
 </head>
+
 <body>
 
 <div class="container">
 
   <h2>Apply For Your City</h2>
-  <p>
-    We only onboard serious roofing contractors ready to dominate their market.
-  </p>
+  <p>We only onboard serious roofing contractors ready to scale.</p>
 
   <form id="applyForm">
 
-    <input
-      name="name"
-      placeholder="Full Name"
-      required
-    />
-
-    <input
-      name="phone"
-      placeholder="Phone Number"
-      required
-    />
-
-    <input
-      type="email"
-      name="email"
-      placeholder="Business Email"
-      required
-    />
-
-    <input
-      name="company"
-      placeholder="Company Name"
-      required
-    />
-
-    <input
-      name="city"
-      placeholder="Primary Service City"
-      required
-    />
+    <input name="name" placeholder="Full Name" required />
+    <input name="phone" placeholder="Phone Number" required />
+    <input type="email" name="email" placeholder="Business Email" required />
+    <input name="company" placeholder="Company Name" required />
+    <input name="city" placeholder="Primary Service City" required />
 
     <select name="monthly_jobs" required>
       <option value="">Monthly Jobs Completed</option>
@@ -129,7 +96,7 @@ button:disabled {
     </select>
 
     <select name="lead_spend" required>
-      <option value="">Monthly Ad / Lead Spend</option>
+      <option value="">Monthly Ad Spend</option>
       <option>$0</option>
       <option>$500–$2,000</option>
       <option>$2,000+</option>
@@ -142,21 +109,13 @@ button:disabled {
       <option>5+</option>
     </select>
 
-    <!-- Honeypot field for bots -->
-    <input
-      type="text"
-      name="website"
-      class="hidden-field"
-      tabindex="-1"
-      autocomplete="off"
-    />
+    <!-- Honeypot -->
+    <input type="text" name="website" class="hidden-field" tabindex="-1" />
 
-    <button type="submit" id="submitBtn">
-      Apply Now
-    </button>
+    <button type="submit" id="submitBtn">Apply Now</button>
 
     <div class="notice">
-      Qualified contractors will be redirected to schedule onboarding.
+      Qualified applicants will be redirected to onboarding.
     </div>
 
   </form>
@@ -165,41 +124,38 @@ button:disabled {
 
 <script>
 const form = document.getElementById("applyForm");
-const submitBtn = document.getElementById("submitBtn");
+const btn = document.getElementById("submitBtn");
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  submitBtn.disabled = true;
-  submitBtn.innerText = "Submitting...";
+  btn.disabled = true;
+  btn.innerText = "Submitting...";
 
-  const formData = Object.fromEntries(new FormData(form));
+  const data = Object.fromEntries(new FormData(form));
 
   try {
     const res = await fetch("/api/apply", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(formData)
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
     });
 
-    const data = await res.json();
+    const result = await res.json();
 
-    if (data.qualified) {
+    if (result.qualified) {
       window.location.href = "/book-call.html";
-      return;
+    } else {
+      alert("Thanks! We’ll review your application.");
     }
-
-    alert("Thanks for applying. We’ll review and follow up if it’s a fit.");
 
   } catch (err) {
     console.error(err);
-    alert("Something went wrong. Please try again.");
+    alert("Error submitting form.");
   }
 
-  submitBtn.disabled = false;
-  submitBtn.innerText = "Apply Now";
+  btn.disabled = false;
+  btn.innerText = "Apply Now";
 });
 </script>
 

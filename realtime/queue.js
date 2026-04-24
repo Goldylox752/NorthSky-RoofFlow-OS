@@ -6,20 +6,54 @@ const supabase = createClient(
 );
 
 /**
- * Subscribe to live lead assignments
+ * LIVE QUEUE SYSTEM (production-ready v1)
  */
-export function subscribeToQueue(callback) {
+export async function loadInitialQueue(org_id) {
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*")
+    .eq("org_id", org_id)
+    .eq("status", "new")
+    .order("created_at", { ascending: false });
 
-  const channel = supabase.channel("queue_updates");
+  if (error) {
+    console.error("Queue load error:", error);
+    return [];
+  }
+
+  return data;
+}
+
+/**
+ * Subscribe to real-time lead updates
+ */
+export function subscribeToQueue(org_id, callback) {
+
+  const channel = supabase.channel(`queue_updates_${org_id}`);
 
   channel
     .on("broadcast", { event: "lead_assigned" }, (payload) => {
-      callback(payload.payload);
+      if (payload.payload.org_id === org_id) {
+        callback(payload.payload);
+      }
     })
+
     .on("broadcast", { event: "lead_updated" }, (payload) => {
-      callback(payload.payload);
+      if (payload.payload.org_id === org_id) {
+        callback(payload.payload);
+      }
     })
+
     .subscribe();
 
   return channel;
+}
+
+/**
+ * Cleanup helper
+ */
+export function unsubscribeQueue(channel) {
+  if (channel) {
+    supabase.removeChannel(channel);
+  }
 }

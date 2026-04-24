@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>RoofFlow | Booked Roofing Jobs System</title>
+<title>RoofFlow | We Book Roofing Jobs for Contractors</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 
@@ -23,18 +23,20 @@ body {
 
 .hero {
   text-align: center;
-  padding: 60px 20px;
+  padding: 70px 20px 40px;
 }
 
 h1 {
-  font-size: 42px;
+  font-size: 44px;
   font-weight: 800;
+  line-height: 1.1;
 }
 
 p {
-  opacity: 0.8;
-  max-width: 700px;
-  margin: auto;
+  opacity: 0.85;
+  max-width: 720px;
+  margin: 15px auto;
+  font-size: 16px;
 }
 
 .card {
@@ -52,20 +54,22 @@ p {
 }
 
 .price {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 30px;
+  font-weight: 800;
+  margin: 10px 0;
 }
 
 .btn {
   background: #4f46e5;
-  padding: 12px;
+  padding: 14px;
   border: none;
   border-radius: 10px;
   color: white;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   width: 100%;
-  margin-top: 10px;
+  margin-top: 12px;
+  font-size: 15px;
 }
 
 .btn:hover {
@@ -74,15 +78,16 @@ p {
 
 .small {
   font-size: 13px;
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 .highlight {
   color: #60a5fa;
+  font-weight: 600;
 }
 
 .section-title {
-  font-size: 24px;
+  font-size: 22px;
   margin-bottom: 10px;
 }
 
@@ -91,11 +96,21 @@ ul {
   opacity: 0.9;
 }
 
+.badge {
+  display: inline-block;
+  background: #1f2a44;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  margin-bottom: 15px;
+  opacity: 0.9;
+}
+
 .footer {
   text-align: center;
-  opacity: 0.5;
+  opacity: 0.4;
   font-size: 12px;
-  margin-top: 40px;
+  margin-top: 50px;
 }
 </style>
 </head>
@@ -104,101 +119,128 @@ ul {
 
 <div class="container">
 
-<!-- HERO / STORY -->
+<!-- HERO -->
 <div class="hero">
-  <h1>We Book Roofing Jobs — Not Just Leads</h1>
+  <div class="badge">Booked Roofing Jobs System</div>
+
+  <h1>We Don’t Sell Leads — We Book Roofing Jobs for You</h1>
+
   <p>
-    RoofFlow helps roofing contractors get <span class="highlight">qualified homeowners booked directly into their calendar</span> using structured intake + follow-up systems.
+    RoofFlow helps roofing contractors get <span class="highlight">qualified homeowner appointments directly into their calendar</span> using structured intake + real human qualification.
   </p>
+
+  <button class="btn">Get Booked Roofing Jobs</button>
+
+  <p class="small">No shared leads. No junk traffic. Only real homeowners ready for inspection.</p>
 </div>
 
 <!-- PROBLEM -->
 <div class="card">
-  <div class="section-title">The Real Problem</div>
+  <div class="section-title">Why Most Roofing Companies Stay Stuck</div>
   <p>
-    Most roofing companies don’t struggle to get leads — they struggle to respond fast enough and follow up properly before jobs are lost.
+    It’s not a lead problem — it’s a speed + follow-up problem.
   </p>
   <ul>
-    <li>Leads go cold in minutes</li>
-    <li>Homeowners contact multiple contractors</li>
-    <li>Missed calls = lost revenue</li>
+    <li>Homeowners contact multiple contractors at once</li>
+    <li>Leads go cold within minutes</li>
+    <li>Missed calls = lost $1,000–$5,000 jobs</li>
+    <li>Ads don’t convert without structure</li>
   </ul>
 </div>
 
 <!-- SOLUTION -->
 <div class="card">
-  <div class="section-title">What RoofFlow Does</div>
+  <div class="section-title">What RoofFlow Actually Does</div>
   <p>
-    RoofFlow is a structured booking system that captures homeowner requests and turns them into scheduled roofing appointments.
+    RoofFlow is a booking system that turns homeowner inquiries into scheduled roofing appointments.
   </p>
   <ul>
-    <li>Lead intake system</li>
-    <li>Call center qualification</li>
-    <li>Appointment booking into your calendar</li>
+    <li>Captures incoming roofing requests</li>
+    <li>Call team qualifies each lead</li>
+    <li>Filters out low-intent inquiries</li>
+    <li>Books appointments directly into your calendar</li>
   </ul>
+</div>
+
+<!-- HOW IT WORKS -->
+<div class="card">
+  <div class="section-title">How You Get Roofing Jobs</div>
+  <ul>
+    <li>1. Homeowner submits roofing request</li>
+    <li>2. Our team verifies urgency + property details</li>
+    <li>3. Qualified job is booked into your schedule</li>
+  </ul>
+
+  <p class="small">
+    You only show up for real, qualified roofing opportunities.
+  </p>
 </div>
 
 <!-- PROOF -->
 <div class="card">
-  <div class="section-title">How It Works</div>
+  <div class="section-title">What You Receive</div>
   <ul>
-    <li>1. Homeowner submits roofing request</li>
-    <li>2. Our team qualifies the job (budget + urgency)</li>
-    <li>3. Appointment is booked directly into contractor schedule</li>
+    <li>Verified homeowner contact</li>
+    <li>Property + issue details</li>
+    <li>Inspection-ready appointment</li>
+    <li>Pre-qualified job intent</li>
   </ul>
+
   <p class="small">
-    *Example workflow based on contractor pipeline structure (screenshots / case studies can be added later).
+    *Built for contractors who want predictable roofing schedules, not random leads.
   </p>
 </div>
 
 <!-- PRICING -->
 <div class="card">
-  <div class="section-title">Get Booked Roofing Jobs</div>
+  <div class="section-title">Start Getting Booked Roofing Jobs</div>
 
   <div class="grid">
 
     <div class="card">
       <div class="section-title">Starter</div>
-      <div class="price">$99/mo</div>
+      <div class="price">5–10 jobs/mo</div>
       <ul>
-        <li>5 booked jobs/month</li>
-        <li>Basic intake system</li>
+        <li>Entry booking system</li>
+        <li>Basic qualification flow</li>
       </ul>
-      <button class="btn">Get Starter</button>
+      <button class="btn">Start Starter</button>
     </div>
 
     <div class="card">
       <div class="section-title">Pro</div>
-      <div class="price">$299/mo</div>
+      <div class="price">15–30 jobs/mo</div>
       <ul>
-        <li>15–30 booked jobs/month</li>
         <li>Priority qualification</li>
+        <li>Higher booking volume</li>
       </ul>
-      <button class="btn">Get Pro</button>
+      <button class="btn">Start Pro</button>
     </div>
 
     <div class="card">
       <div class="section-title">Elite</div>
-      <div class="price">$999/mo</div>
+      <div class="price">High Volume</div>
       <ul>
-        <li>High volume territories</li>
+        <li>Territory priority</li>
         <li>Dedicated booking support</li>
       </ul>
-      <button class="btn">Get Elite</button>
+      <button class="btn">Start Elite</button>
     </div>
 
   </div>
 </div>
 
-<!-- CTA -->
+<!-- FINAL CTA -->
 <div class="card" style="text-align:center;">
-  <h2>Ready to Start Getting Booked Roofing Jobs?</h2>
-  <p>Stop losing leads to slow follow-up. Start filling your calendar instead.</p>
+  <h2>Ready to Fill Your Roofing Calendar?</h2>
+  <p>
+    Stop chasing leads. Start getting booked roofing jobs instead.
+  </p>
   <button class="btn">Get Started Now</button>
 </div>
 
 <div class="footer">
-  RoofFlow © 2026 — Roofing Appointment System
+  RoofFlow © 2026 — Booked Roofing Appointment System
 </div>
 
 </div>

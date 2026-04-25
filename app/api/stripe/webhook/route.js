@@ -1,8 +1,8 @@
-// app/api/stripe/webhook/route.js
-
-import { stripe } from "@/lib/stripe";
+import Stripe from "stripe";
 
 export async function POST(req) {
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
   const sig = req.headers.get("stripe-signature");
   const body = await req.text();
 
@@ -18,11 +18,5 @@ export async function POST(req) {
     return new Response("Webhook Error", { status: 400 });
   }
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-
-    // 👉 handle success (store in Supabase)
-  }
-
-  return new Response("OK");
+  return Response.json({ received: true });
 }

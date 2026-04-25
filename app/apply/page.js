@@ -12,9 +12,7 @@ export default function Apply() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // 🔒 Validation helpers
   const isValidEmail = (v) => /\S+@\S+\.\S+/.test(v);
-
   const normalizePhone = (v) => v.replace(/\D/g, "");
 
   const isValidPhone = (v) => {
@@ -24,13 +22,11 @@ export default function Apply() {
 
   const resetError = () => setError("");
 
-  // 🧠 Lead score (UI hint only — backend must validate again)
   const leadScore = useMemo(() => {
     return (isValidEmail(email) ? 50 : 0) +
            (isValidPhone(phone) ? 50 : 0);
   }, [email, phone]);
 
-  // 👉 Step 1 validation
   const handleNext = () => {
     resetError();
 
@@ -42,7 +38,6 @@ export default function Apply() {
     setStep(2);
   };
 
-  // 🚀 Checkout handler
   const handleSubmit = async (e) => {
     e.preventDefault();
     resetError();
@@ -60,6 +55,20 @@ export default function Apply() {
     setLoading(true);
 
     try {
+      // 1️⃣ SAVE LEAD FIRST (CRITICAL)
+      await fetch("/api/leads/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          phone,
+          plan,
+          lead_score: leadScore,
+          source: "apply_form",
+        }),
+      });
+
+      // 2️⃣ STRIPE CHECKOUT
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -81,7 +90,7 @@ export default function Apply() {
         window.location.href = data.url;
       }
     } catch (err) {
-      setError(err.message || "Something went wrong. Please try again.");
+      setError(err.message || "Something went wrong. Try again.");
       setLoading(false);
     }
   };
@@ -101,7 +110,6 @@ export default function Apply() {
           🔒 Secure · ⚡ Instant qualification · 🏠 Exclusive territories
         </p>
 
-        {/* PLAN SELECT */}
         <div style={styles.planBox}>
           <p style={styles.labelSmall}>Select Plan</p>
 
@@ -117,7 +125,6 @@ export default function Apply() {
         </div>
 
         <form onSubmit={handleSubmit} style={styles.form}>
-          {/* STEP 1 */}
           {step === 1 && (
             <>
               <label style={styles.label}>Business Email</label>
@@ -134,7 +141,6 @@ export default function Apply() {
             </>
           )}
 
-          {/* STEP 2 */}
           {step === 2 && (
             <>
               <label style={styles.label}>Phone Number</label>
@@ -157,3 +163,73 @@ export default function Apply() {
     </div>
   );
 }
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    background: "#0b1220",
+    color: "white",
+    padding: 20,
+  },
+
+  card: {
+    width: "100%",
+    maxWidth: 420,
+    background: "#111a2e",
+    padding: 28,
+    borderRadius: 12,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
+  },
+
+  h1: { fontSize: 26, marginBottom: 6 },
+  subtext: { fontSize: 13, opacity: 0.7, marginBottom: 10 },
+  step: { fontSize: 14, opacity: 0.7 },
+  badges: { fontSize: 12, opacity: 0.7, marginBottom: 15 },
+
+  planBox: { marginBottom: 15 },
+  labelSmall: { fontSize: 12, marginBottom: 6, opacity: 0.8 },
+
+  select: {
+    width: "100%",
+    padding: 10,
+    borderRadius: 6,
+    background: "#0b1220",
+    color: "white",
+    border: "1px solid #333",
+  },
+
+  form: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+
+  label: { fontSize: 12, opacity: 0.8 },
+
+  input: {
+    padding: 12,
+    borderRadius: 8,
+    background: "#0b1220",
+    color: "white",
+    border: "1px solid #333",
+  },
+
+  button: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 8,
+    background: "#3b82f6",
+    color: "white",
+    border: "none",
+    cursor: "pointer",
+    fontWeight: "bold",
+  },
+
+  error: {
+    color: "#ff6b6b",
+    fontSize: 12,
+  },
+};

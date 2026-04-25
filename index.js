@@ -1,31 +1,16 @@
 import express from "express";
-import path from "path";
+import applyRoutes from "./api/apply.js";
+import checkoutRoutes from "./api/create-checkout.js";
 
 const app = express();
 
-/* ================= MIDDLEWARE ================= */
 app.use(express.json());
-app.use(express.static("public"));
 
-/* ================= ROUTES ================= */
+app.use("/api", applyRoutes);
+app.use("/api", checkoutRoutes);
 
-/* APPLY PAGE */
-app.get("/apply", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "public/apply.html"));
+app.get("/", (req, res) => {
+  res.send("RoofFlow API running");
 });
 
-/* APPLY FORM API */
-app.post("/api/apply", (req, res) => {
-  console.log("APPLICATION:", req.body);
-
-  const qualified = req.body.monthly_jobs === "15+";
-
-  res.json({ qualified });
-});
-
-/* ================= START SERVER ================= */
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
-});
+app.listen(process.env.PORT || 3000);

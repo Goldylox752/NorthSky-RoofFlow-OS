@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import LeadCard from "./LeadCard";
 
@@ -9,10 +11,10 @@ export default function LeadQueue({ leads = [], setLeads }) {
     setError("");
     setLoadingId(id);
 
-    // 💾 Snapshot for rollback
-    const previous = leads;
+    // 💾 snapshot for rollback
+    const previousLeads = [...leads];
 
-    // ⚡ Optimistic update
+    // ⚡ optimistic update
     setLeads((current) =>
       current.map((lead) =>
         lead.id === id ? { ...lead, status } : lead
@@ -27,12 +29,12 @@ export default function LeadQueue({ leads = [], setLeads }) {
       });
 
       if (!res.ok) {
-        throw new Error("Update failed");
+        throw new Error("Failed to update lead");
       }
     } catch (err) {
-      // 🔄 rollback on failure
-      setLeads(previous);
-      setError("Failed to update lead. Please try again.");
+      // 🔄 rollback
+      setLeads(previousLeads);
+      setError("Update failed. Please try again.");
     } finally {
       setLoadingId(null);
     }

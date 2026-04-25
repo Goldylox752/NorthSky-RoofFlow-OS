@@ -1,20 +1,15 @@
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
-function getSupabase() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+export async function GET() {
+  const supabase = getSupabaseAdmin();
 
-  if (!url || !key) {
-    throw new Error("Missing Supabase env vars");
+  const { data, error } = await supabase.auth.getUser();
+
+  if (error) {
+    return Response.json({ error: error.message }, { status: 401 });
   }
 
-  return createClient(url, key);
-}
-
-export async function GET() {
-  const supabase = getSupabase();
-
-  return Response.json({ ok: true });
+  return Response.json({ user: data.user });
 }

@@ -8,39 +8,21 @@ const supabase = createClient(
 );
 
 export default function Dashboard() {
-  const [leads, setLeads] = useState([]);
+  const [data, setData] = useState([]);
 
   useEffect(() => {
-    fetchLeads();
+    async function fetchData() {
+      const { data } = await supabase.from("leads").select("*");
+      setData(data || []);
+    }
 
-    const channel = supabase
-      .channel("leads")
-      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, fetchLeads)
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
+    fetchData();
   }, []);
 
-  async function fetchLeads() {
-    const { data } = await supabase
-      .from("leads")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    setLeads(data || []);
-  }
-
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Call Centre OS</h1>
-
-      {leads.map(l => (
-        <div key={l.id} style={{ padding: 10, border: "1px solid #333", marginBottom: 10 }}>
-          <h3>{l.name}</h3>
-          <p>{l.city}</p>
-          <p>Status: {l.status}</p>
-        </div>
-      ))}
+    <div>
+      <h1>Dashboard</h1>
+      <pre>{JSON.stringify(data, null, 2)}</pre>
     </div>
   );
 }

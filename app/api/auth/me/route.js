@@ -1,7 +1,9 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSupabaseServer } from "@/lib/supabaseServer";
 
-export async function GET(req) {
-  const { data, error } = await supabaseAdmin.auth.getUser();
+export async function GET() {
+  const supabase = getSupabaseServer();
+
+  const { data, error } = await supabase.auth.getUser();
 
   if (error) {
     return Response.json({ error: error.message }, { status: 401 });

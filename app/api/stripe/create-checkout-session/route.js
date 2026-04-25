@@ -1,20 +1,14 @@
 import Stripe from "stripe";
 
+export const runtime = "nodejs";
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// 🔥 MUST BE STRIPE RECURRING PRICE IDs (NOT amounts)
 const PRICES = {
-  starter: {
-    amount: 9900, // $99
-    name: "RoofFlow Starter",
-  },
-  growth: {
-    amount: 19900, // $199
-    name: "RoofFlow Growth",
-  },
-  domination: {
-    amount: 39900, // $399
-    name: "RoofFlow Domination",
-  },
+  starter: process.env.STRIPE_STARTER_PRICE_ID,
+  growth: process.env.STRIPE_GROWTH_PRICE_ID,
+  domination: process.env.STRIPE_DOMINATION_PRICE_ID,
 };
 
 export async function POST(req) {
@@ -25,26 +19,18 @@ export async function POST(req) {
       return Response.json({ error: "Invalid plan" }, { status: 400 });
     }
 
-    const selected = PRICES[plan];
-
     const session = await stripe.checkout.sessions.create({
+      mode: "subscription", // 🔥 CRITICAL FIX
+
       payment_method_types: ["card"],
-      mode: "payment",
 
       line_items: [
         {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: selected.name,
-            },
-            unit_amount: selected.amount,
-          },
+          price: PRICES[plan], // 🔥 recurring price ID
           quantity: 1,
         },
       ],
 
-      // 🔥 THIS IS WHAT CONNECTS EVERYTHING
       metadata: {
         plan,
         email: email || "",
@@ -57,7 +43,7 @@ export async function POST(req) {
 
     return Response.json({ url: session.url });
   } catch (err) {
-    console.error(err);
+    console.error("Stripe error:", err.message);
     return Response.json({ error: "Checkout failed" }, { status: 500 });
   }
 }

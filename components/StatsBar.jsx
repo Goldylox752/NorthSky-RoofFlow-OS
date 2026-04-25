@@ -1,14 +1,20 @@
 import { useMemo } from "react";
 
 export default function StatsBar({ leads = [] }) {
-  // 🔥 Optimized calculations (prevents re-filtering every render)
+  // ⚡ Single-pass reduction (faster than multiple filters)
   const stats = useMemo(() => {
-    const total = leads.length;
-    const accepted = leads.filter((l) => l.status === "accepted").length;
-    const rejected = leads.filter((l) => l.status === "rejected").length;
-    const pending = total - accepted - rejected;
+    return leads.reduce(
+      (acc, lead) => {
+        acc.total += 1;
 
-    return { total, accepted, rejected, pending };
+        if (lead.status === "accepted") acc.accepted += 1;
+        else if (lead.status === "rejected") acc.rejected += 1;
+        else acc.pending += 1;
+
+        return acc;
+      },
+      { total: 0, accepted: 0, rejected: 0, pending: 0 }
+    );
   }, [leads]);
 
   return (
@@ -21,14 +27,12 @@ export default function StatsBar({ leads = [] }) {
   );
 }
 
-// 🔥 Small reusable stat block
-function Stat({ label, value, color }) {
+// 📊 Reusable stat component
+function Stat({ label, value, color = "#ffffff" }) {
   return (
     <div style={styles.stat}>
-      <div style={styles.label}>{label}</div>
-      <div style={{ ...styles.value, color: color || "#fff" }}>
-        {value}
-      </div>
+      <span style={styles.label}>{label}</span>
+      <span style={{ ...styles.value, color }}>{value}</span>
     </div>
   );
 }
@@ -36,19 +40,20 @@ function Stat({ label, value, color }) {
 const styles = {
   bar: {
     display: "flex",
-    gap: 20,
-    marginBottom: 20,
+    gap: 18,
     padding: 14,
+    marginBottom: 20,
     background: "#121a2b",
-    borderRadius: 10,
     border: "1px solid #24314d",
+    borderRadius: 10,
     flexWrap: "wrap",
+    alignItems: "center",
   },
 
   stat: {
     display: "flex",
     flexDirection: "column",
-    minWidth: 80,
+    minWidth: 90,
   },
 
   label: {
@@ -58,6 +63,6 @@ const styles = {
 
   value: {
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: 700,
   },
 };

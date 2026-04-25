@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { scoreLead } from "@/lib/leadScore";
+import { aiScoreLead } from "@/lib/aiScoreLead";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -7,13 +7,18 @@ export async function POST(req) {
   try {
     const { email, phone, answers = {} } = await req.json();
 
-    // 🧠 LEAD SCORING (inside handler only)
-    const leadScore = scoreLead({ email, phone, answers });
+    // 🤖 AI LEAD SCORING
+    const ai = await aiScoreLead({ email, phone, answers });
+
+    const leadScore = ai.score;
 
     // 🚨 BLOCK LOW QUALITY LEADS BEFORE STRIPE
-    if (leadScore < 60) {
+    if (leadScore < 65) {
       return new Response(
-        JSON.stringify({ error: "Not qualified" }),
+        JSON.stringify({
+          error: "Not qualified",
+          reason: ai.reason,
+        }),
         {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -21,7 +26,7 @@ export async function POST(req) {
       );
     }
 
-    // 💳 CREATE STRIPE CHECKOUT SESSION
+    // 💳 CREATE STRIPE SESSION
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
@@ -38,12 +43,12 @@ export async function POST(req) {
 
       customer_email: email,
 
-      // 📦 Used later in webhook (SMS + CRM + analytics)
       metadata: {
         email,
         phone,
         score: leadScore,
-        source: "roofflow_apply",
+        ai_reason: ai.reason,
+        source: "roofflow_ai",
       },
     });
 

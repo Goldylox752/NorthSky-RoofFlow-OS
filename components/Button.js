@@ -1,4 +1,13 @@
-export default function Button({ children, onClick, href, type = "button", variant = "primary" }) {
+import Link from "next/link";
+
+export default function Button({
+  children,
+  onClick,
+  href,
+  type = "button",
+  variant = "primary",
+  disabled = false,
+}) {
   const base =
     "px-5 py-3 rounded-xl font-semibold transition duration-200 inline-flex items-center justify-center";
 
@@ -8,18 +17,41 @@ export default function Button({ children, onClick, href, type = "button", varia
     ghost: "bg-transparent hover:bg-gray-100 text-black",
   };
 
-  const className = `${base} ${styles[variant] || styles.primary}`;
+  const disabledStyle = disabled ? "opacity-50 cursor-not-allowed" : "";
 
+  const className = `${base} ${styles[variant] || styles.primary} ${disabledStyle}`;
+
+  // 🔥 INTERNAL NAVIGATION (Next.js optimized)
+  if (href && href.startsWith("/")) {
+    return (
+      <Link href={href} className={className}>
+        {children}
+      </Link>
+    );
+  }
+
+  // 🔥 EXTERNAL LINK
   if (href) {
     return (
-      <a href={href} className={className}>
+      <a
+        href={href}
+        className={className}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
         {children}
       </a>
     );
   }
 
+  // 🔥 BUTTON
   return (
-    <button type={type} onClick={onClick} className={className}>
+    <button
+      type={type}
+      onClick={onClick}
+      className={className}
+      disabled={disabled}
+    >
       {children}
     </button>
   );

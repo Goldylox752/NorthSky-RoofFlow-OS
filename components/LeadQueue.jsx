@@ -1,7 +1,7 @@
 import { useState } from "react";
 import LeadCard from "./LeadCard";
 
-export default function LeadQueue({ leads, setLeads }) {
+export default function LeadQueue({ leads = [], setLeads }) {
   const [loadingId, setLoadingId] = useState(null);
   const [error, setError] = useState("");
 
@@ -9,12 +9,13 @@ export default function LeadQueue({ leads, setLeads }) {
     setError("");
     setLoadingId(id);
 
-    // 🔥 Optimistic update
-    const prevState = leads;
+    // 💾 Snapshot for rollback
+    const previous = leads;
 
-    setLeads((prev) =>
-      prev.map((l) =>
-        l.id === id ? { ...l, status } : l
+    // ⚡ Optimistic update
+    setLeads((current) =>
+      current.map((lead) =>
+        lead.id === id ? { ...lead, status } : lead
       )
     );
 
@@ -26,35 +27,35 @@ export default function LeadQueue({ leads, setLeads }) {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to update lead");
+        throw new Error("Update failed");
       }
     } catch (err) {
-      // 🔥 rollback on failure
-      setLeads(prevState);
-      setError("Failed to update lead. Try again.");
+      // 🔄 rollback on failure
+      setLeads(previous);
+      setError("Failed to update lead. Please try again.");
+    } finally {
+      setLoadingId(null);
     }
-
-    setLoadingId(null);
   }
 
   return (
     <div style={styles.queue}>
       {error && <p style={styles.error}>{error}</p>}
 
-      {leads.length === 0 && (
+      {leads.length === 0 ? (
         <p style={styles.empty}>No assigned leads yet...</p>
+      ) : (
+        leads.map((item) => (
+          <LeadCard
+            key={item.id}
+            lead={item.lead}
+            status={item.status}
+            loading={loadingId === item.id}
+            onAccept={() => updateStatus(item.id, "accepted")}
+            onReject={() => updateStatus(item.id, "rejected")}
+          />
+        ))
       )}
-
-      {leads.map((item) => (
-        <LeadCard
-          key={item.id}
-          lead={item.lead}
-          status={item.status}
-          loading={loadingId === item.id}
-          onAccept={() => updateStatus(item.id, "accepted")}
-          onReject={() => updateStatus(item.id, "rejected")}
-        />
-      ))}
     </div>
   );
 }
@@ -67,6 +68,7 @@ const styles = {
 
   empty: {
     opacity: 0.7,
+    fontSize: 13,
   },
 
   error: {

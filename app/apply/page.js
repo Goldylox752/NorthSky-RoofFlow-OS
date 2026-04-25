@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 export default function Apply() {
   const [step, setStep] = useState(1);
@@ -12,44 +12,51 @@ export default function Apply() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // 🔐 Validation
-  const isValidEmail = (email) => /\S+@\S+\.\S+/.test(email);
+  // ✅ Validation (memo-safe + reusable)
+  const isValidEmail = (v) => /\S+@\S+\.\S+/.test(v);
 
-  const isValidPhone = (phone) =>
-    /^[0-9]{10,15}$/.test(phone.replace(/\D/g, ""));
+  const normalizePhone = (v) => v.replace(/\D/g, "");
 
-  // 🧠 Lead scoring (frontend UX only — backend must re-check)
-  const scoreLead = () => {
+  const isValidPhone = (v) => {
+    const cleaned = normalizePhone(v);
+    return cleaned.length >= 10 && cleaned.length <= 15;
+  };
+
+  // 🧠 Lead score (frontend hint only — backend must verify)
+  const leadScore = useMemo(() => {
     let score = 0;
     if (isValidEmail(email)) score += 50;
     if (isValidPhone(phone)) score += 50;
     return score;
-  };
+  }, [email, phone]);
 
-  // 👉 Step 1 → Step 2
+  const resetError = () => setError("");
+
+  // 👉 Step 1 validation
   const handleNext = () => {
-    setError("");
+    resetError();
 
     if (!isValidEmail(email)) {
-      return setError("Enter a valid email to continue.");
+      setError("Please enter a valid email.");
+      return;
     }
 
     setStep(2);
   };
 
-  // 🚀 Checkout submit
+  // 🚀 Submit to Stripe
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    resetError();
 
     if (!isValidPhone(phone)) {
-      return setError("Enter a valid phone number.");
+      setError("Please enter a valid phone number.");
+      return;
     }
 
-    const leadScore = scoreLead();
-
     if (leadScore < 80) {
-      return setError("Sorry, we only accept qualified contractors.");
+      setError("We only accept qualified contractors at this time.");
+      return;
     }
 
     setLoading(true);
@@ -57,9 +64,7 @@ export default function Apply() {
     try {
       const res = await fetch("/api/checkout", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
           phone,
@@ -71,16 +76,14 @@ export default function Apply() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Checkout failed");
-        setLoading(false);
-        return;
+        throw new Error(data?.error || "Checkout failed");
       }
 
-      if (data.url) {
+      if (data?.url) {
         window.location.href = data.url;
       }
     } catch (err) {
-      setError("Something went wrong. Please try again.");
+      setError(err.message || "Something went wrong.");
       setLoading(false);
     }
   };
@@ -97,12 +100,12 @@ export default function Apply() {
         <p style={styles.step}>Step {step} of 2</p>
 
         <p style={styles.badges}>
-          🔒 Secure application · ⚡ Instant qualification · 🏠 Exclusive access
+          🔒 Secure · ⚡ Instant qualification · 🏠 Exclusive access
         </p>
 
-        {/* 🧠 PLAN SELECTOR */}
+        {/* PLAN */}
         <div style={styles.planBox}>
-          <p style={styles.labelSmall}>Choose Your Plan</p>
+          <p style={styles.labelSmall}>Choose Plan</p>
 
           <select
             value={plan}
@@ -120,9 +123,9 @@ export default function Apply() {
             <>
               <label style={styles.label}>Business Email</label>
               <input
-                placeholder="you@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
                 style={styles.input}
               />
 
@@ -136,14 +139,14 @@ export default function Apply() {
             <>
               <label style={styles.label}>Phone Number</label>
               <input
-                placeholder="(555) 555-5555"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                placeholder="(555) 555-5555"
                 style={styles.input}
               />
 
-              <button type="submit" style={styles.button}>
-                {loading ? "Redirecting to Stripe..." : "Continue to Payment"}
+              <button type="submit" style={styles.button} disabled={loading}>
+                {loading ? "Redirecting..." : "Continue to Payment"}
               </button>
             </>
           )}
@@ -170,42 +173,18 @@ const styles = {
     width: "100%",
     maxWidth: 420,
     background: "#111a2e",
-    padding: 30,
+    padding: 28,
     borderRadius: 12,
     boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
   },
 
-  h1: {
-    fontSize: 26,
-    marginBottom: 6,
-  },
+  h1: { fontSize: 26, marginBottom: 6 },
+  subtext: { fontSize: 13, opacity: 0.7, marginBottom: 10 },
+  step: { fontSize: 14, opacity: 0.7 },
+  badges: { fontSize: 12, opacity: 0.7, marginBottom: 15 },
 
-  subtext: {
-    fontSize: 13,
-    opacity: 0.7,
-    marginBottom: 10,
-  },
-
-  step: {
-    fontSize: 14,
-    opacity: 0.7,
-  },
-
-  badges: {
-    fontSize: 12,
-    opacity: 0.7,
-    marginBottom: 15,
-  },
-
-  planBox: {
-    marginBottom: 15,
-  },
-
-  labelSmall: {
-    fontSize: 12,
-    marginBottom: 6,
-    opacity: 0.8,
-  },
+  planBox: { marginBottom: 15 },
+  labelSmall: { fontSize: 12, marginBottom: 6, opacity: 0.8 },
 
   select: {
     width: "100%",
@@ -222,10 +201,7 @@ const styles = {
     gap: 10,
   },
 
-  label: {
-    fontSize: 12,
-    opacity: 0.8,
-  },
+  label: { fontSize: 12, opacity: 0.8 },
 
   input: {
     padding: 12,

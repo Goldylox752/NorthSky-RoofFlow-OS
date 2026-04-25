@@ -6,7 +6,7 @@ export default function Apply() {
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [plan, setPlan] = useState("growth"); // default middle tier
+  const [plan, setPlan] = useState("growth");
 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,9 +25,11 @@ export default function Apply() {
 
   const handleNext = () => {
     setError("");
+
     if (!isValidEmail(email)) {
       return setError("Please enter a valid email.");
     }
+
     setStep(2);
   };
 
@@ -35,34 +37,43 @@ export default function Apply() {
     e.preventDefault();
     setError("");
 
+    const leadScore = scoreLead();
+
+    // ⚠️ FRONTEND GATE (UX ONLY — backend must also validate)
     if (!isValidPhone(phone)) {
       return setError("Please enter a valid phone number.");
     }
 
-    const leadScore = scoreLead();
-
-    if (leadScore < 80) {
-      return setError("Sorry, we can only accept qualified contractors.");
-    }
-
     setLoading(true);
 
-    const res = await fetch("/api/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email,
-        phone,
-        plan, // 🔥 THIS CONNECTS TO STRIPE PRICING
-      }),
-    });
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          phone,
+          plan,
+          leadScore, // 🔥 IMPORTANT FOR SERVER VALIDATION
+        }),
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    setLoading(false);
+      if (!res.ok) {
+        setError(data.error || "Checkout failed");
+        setLoading(false);
+        return;
+      }
 
-    if (data.url) {
-      window.location.href = data.url;
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      setError("Something went wrong. Try again.");
+      setLoading(false);
     }
   };
 
@@ -77,9 +88,9 @@ export default function Apply() {
           🔒 No spam · ⚡ Instant approval · 🏠 Exclusive leads only
         </p>
 
-        {/* 🧠 PLAN SELECTOR (NEW) */}
+        {/* PLAN SELECTOR */}
         <div style={styles.planBox}>
-          <p style={{ fontSize: 12 }}>Choose Plan</p>
+          <p style={{ fontSize: 12, marginBottom: 6 }}>Choose Plan</p>
 
           <select
             value={plan}
@@ -120,7 +131,7 @@ export default function Apply() {
               />
 
               <button type="submit" style={styles.button}>
-                {loading ? "Processing..." : "Continue to Checkout"}
+                {loading ? "Redirecting..." : "Continue to Checkout"}
               </button>
             </>
           )}
@@ -151,15 +162,13 @@ const styles = {
     borderRadius: 12,
   },
 
-  h1: { fontSize: 26 },
+  h1: { fontSize: 26, marginBottom: 10 },
 
   step: { fontSize: 14, opacity: 0.7 },
 
   badges: { fontSize: 12, opacity: 0.7, marginBottom: 15 },
 
-  planBox: {
-    marginBottom: 15,
-  },
+  planBox: { marginBottom: 15 },
 
   select: {
     width: "100%",

@@ -12,20 +12,41 @@ export default function Apply() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [lastSubmit, setLastSubmit] = useState(0);
+
   const isValidEmail = (v) => /\S+@\S+\.\S+/.test(v);
 
-  // normalize phone to digits only
   const normalizePhone = (v) => v.replace(/\D/g, "");
 
-  const isValidPhone = (v) => {
-    const cleaned = normalizePhone(v);
-    return cleaned.length >= 10 && cleaned.length <= 15;
+  const formatPhone = (value) => {
+    const digits = normalizePhone(value).slice(0, 10);
+
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   };
+
+  const handlePhoneChange = (e) => {
+    setPhone(formatPhone(e.target.value));
+  };
+
+  const cleanedPhone = useMemo(() => normalizePhone(phone), [phone]);
+
+  const isValidPhone = cleanedPhone.length === 10;
+
+  const detectRegion = (digits) => {
+    if (digits.startsWith("1")) return "US/CA (+1)";
+    return "Local";
+  };
+
+  const region = useMemo(() => detectRegion(cleanedPhone), [cleanedPhone]);
 
   const leadScore = useMemo(() => {
     return (isValidEmail(email) ? 50 : 0) +
-           (isValidPhone(phone) ? 50 : 0);
-  }, [email, phone]);
+           (isValidPhone ? 50 : 0);
+  }, [email, isValidPhone]);
+
+  const isQualified = isValidEmail(email) && isValidPhone;
 
   const handleNext = () => {
     setError("");
@@ -42,8 +63,16 @@ export default function Apply() {
     e.preventDefault();
     setError("");
 
-    if (!isValidPhone(phone)) {
-      setError("Please enter a valid phone number.");
+    // 🛡️ spam protection (10s cooldown)
+    const now = Date.now();
+    if (now - lastSubmit < 10000) {
+      setError("Please wait before submitting again.");
+      return;
+    }
+    setLastSubmit(now);
+
+    if (!isValidPhone) {
+      setError("Please enter a valid 10-digit phone number.");
       return;
     }
 
@@ -55,9 +84,6 @@ export default function Apply() {
     setLoading(true);
 
     try {
-      const cleanedPhone = normalizePhone(phone);
-
-      // 1️⃣ SAVE LEAD
       await fetch("/api/leads/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -66,11 +92,11 @@ export default function Apply() {
           phone: cleanedPhone,
           plan,
           lead_score: leadScore,
+          region,
           source: "apply_form",
         }),
       });
 
-      // 2️⃣ STRIPE CHECKOUT
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -84,13 +110,10 @@ export default function Apply() {
 
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data?.error || "Checkout failed");
-      }
+      if (!res.ok) throw new Error(data?.error || "Checkout failed");
 
-      if (data?.url) {
-        window.location.href = data.url;
-      }
+      if (data?.url) window.location.href = data.url;
+
     } catch (err) {
       setError(err.message || "Something went wrong. Try again.");
       setLoading(false);
@@ -106,10 +129,20 @@ export default function Apply() {
           Automated roofing appointments delivered directly to your pipeline
         </p>
 
+        {/* 🧠 LIVE STATUS */}
+        <p style={{
+          fontSize: 13,
+          fontWeight: "bold",
+          marginTop: 8,
+          color: isQualified ? "#22c55e" : "#f87171"
+        }}>
+          {isQualified ? "✅ Qualified Lead" : "⚠️ Not Qualified Yet"}
+        </p>
+
         <p style={styles.step}>Step {step} of 2</p>
 
         <p style={styles.badges}>
-          🔒 Secure · ⚡ Instant qualification · 🏠 Exclusive territories
+          🌎 {region} · 🔒 Secure · ⚡ Instant filtering
         </p>
 
         <div style={styles.planBox}>
@@ -148,7 +181,7 @@ export default function Apply() {
               <label style={styles.label}>Phone Number</label>
               <input
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={handlePhoneChange}
                 placeholder="(780) 123-4567"
                 style={styles.input}
               />

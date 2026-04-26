@@ -14,23 +14,23 @@ export default function Apply() {
 
   const [lastSubmit, setLastSubmit] = useState(0);
 
-  // 🕳️ honeypot field (bot trap)
+  // 🕳️ honeypot (bot trap)
   const [website, setWebsite] = useState("");
 
   const isValidEmail = (v) => /\S+@\S+\.\S+/.test(v);
 
-  const disposableDomains = [
+  const disposableDomains = new Set([
     "mailinator.com",
     "tempmail.com",
     "10minutemail.com",
     "guerrillamail.com",
     "yopmail.com",
     "trashmail.com",
-  ];
+  ]);
 
   const isDisposableEmail = (email) => {
     const domain = email.split("@")[1];
-    return disposableDomains.includes(domain);
+    return disposableDomains.has(domain);
   };
 
   const normalizePhone = (v) => v.replace(/\D/g, "");
@@ -39,7 +39,9 @@ export default function Apply() {
     const digits = normalizePhone(value).slice(0, 10);
 
     if (digits.length <= 3) return digits;
-    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    if (digits.length <= 6)
+      return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+
     return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   };
 
@@ -51,14 +53,15 @@ export default function Apply() {
 
   const isValidPhone = cleanedPhone.length === 10;
 
-  const detectRegion = (digits) => {
-    if (digits.startsWith("1")) return "US/CA (+1)";
-    return "Local";
-  };
+  const detectRegion = (digits) =>
+    digits.startsWith("1") ? "US/CA (+1)" : "Local";
 
-  const region = useMemo(() => detectRegion(cleanedPhone), [cleanedPhone]);
+  const region = useMemo(
+    () => detectRegion(cleanedPhone),
+    [cleanedPhone]
+  );
 
-  // 🧠 improved lead scoring (AI-ready structure)
+  // 🧠 improved scoring (simple but scalable to AI later)
   const leadScore = useMemo(() => {
     let score = 0;
 
@@ -76,13 +79,11 @@ export default function Apply() {
     setError("");
 
     if (!isValidEmail(email)) {
-      setError("Please enter a valid business email.");
-      return;
+      return setError("Enter a valid business email.");
     }
 
     if (isDisposableEmail(email)) {
-      setError("Disposable emails are not allowed.");
-      return;
+      return setError("Disposable emails are not accepted.");
     }
 
     setStep(2);
@@ -94,26 +95,22 @@ export default function Apply() {
 
     // 🕳️ bot detection
     if (website) {
-      setError("Bot detected.");
-      return;
+      return setError("Bot detected.");
     }
 
-    // 🛡️ IP / spam cooldown
+    // 🛡️ spam throttle
     const now = Date.now();
     if (now - lastSubmit < 10000) {
-      setError("Please wait before submitting again.");
-      return;
+      return setError("Please wait before submitting again.");
     }
     setLastSubmit(now);
 
     if (!isValidPhone) {
-      setError("Please enter a valid 10-digit phone number.");
-      return;
+      return setError("Enter a valid 10-digit phone number.");
     }
 
     if (!isQualified) {
-      setError("We only accept qualified roofing contractors.");
-      return;
+      return setError("We only accept qualified roofing contractors.");
     }
 
     setLoading(true);
@@ -125,8 +122,8 @@ export default function Apply() {
         plan,
         lead_score: leadScore,
         region,
-        source: "apply_form",
         hot_lead: leadScore >= 90,
+        source: "apply_form",
       };
 
       // 1️⃣ SAVE LEAD
@@ -136,7 +133,7 @@ export default function Apply() {
         body: JSON.stringify(payload),
       });
 
-      // 2️⃣ CHECKOUT
+      // 2️⃣ STRIPE CHECKOUT
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -159,7 +156,7 @@ export default function Apply() {
     <div style={styles.page}>
       <div style={styles.card}>
 
-        {/* 🕳️ honeypot field (hidden) */}
+        {/* 🕳️ honeypot field */}
         <input
           value={website}
           onChange={(e) => setWebsite(e.target.value)}
@@ -168,28 +165,33 @@ export default function Apply() {
           autoComplete="off"
         />
 
-        <h1 style={styles.h1}>Apply to RoofFlow</h1>
+        {/* 🧱 BRAND HEADER (trust focused) */}
+        <h1 style={styles.h1}>RoofFlow Applications</h1>
 
         <p style={styles.subtext}>
-          Automated roofing appointments delivered directly to your pipeline
+          We connect roofing contractors with homeowners actively requesting estimates.
         </p>
 
-        {/* 🚨 HOT LEAD BADGE */}
-        <p style={{
-          fontSize: 13,
-          fontWeight: "bold",
-          marginTop: 8,
-          color: isQualified ? "#22c55e" : "#f87171"
-        }}>
-          {isQualified ? "🔥 Hot Qualified Lead" : "⚠️ Not Qualified Yet"}
+        {/* 🔥 TRUST / STATUS */}
+        <p
+          style={{
+            fontSize: 13,
+            fontWeight: "bold",
+            marginTop: 10,
+            color: isQualified ? "#22c55e" : "#f87171",
+          }}
+        >
+          {isQualified ? "🔥 Qualified Lead (High Intent)" : "⚠️ Qualification Required"}
         </p>
 
         <p style={styles.step}>Step {step} of 2</p>
 
+        {/* 🛡️ TRUST SIGNAL BAR */}
         <p style={styles.badges}>
-          🌎 {region} · 🛡️ Anti-spam enabled · ⚡ AI scoring active
+          🌎 {region} · 🔒 Secure Checkout · 🛡️ Spam Protected · ⚡ Instant Scoring
         </p>
 
+        {/* 💰 PLAN */}
         <div style={styles.planBox}>
           <p style={styles.labelSmall}>Select Plan</p>
 
@@ -204,10 +206,12 @@ export default function Apply() {
           </select>
         </div>
 
+        {/* FORM */}
         <form onSubmit={handleSubmit} style={styles.form}>
           {step === 1 && (
             <>
               <label style={styles.label}>Business Email</label>
+
               <input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -224,6 +228,7 @@ export default function Apply() {
           {step === 2 && (
             <>
               <label style={styles.label}>Phone Number</label>
+
               <input
                 value={phone}
                 onChange={handlePhoneChange}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 
 export default function Home() {
   const trackCTA = async (eventName) => {
@@ -43,10 +44,10 @@ export default function Home() {
         <div style={styles.logo}>RoofFlow</div>
 
         <div style={styles.navLinks}>
-          <a href="/" style={styles.link}>Home</a>
-          <a href="/pricing" style={styles.link}>Pricing</a>
-          <a href="/apply" style={styles.link}>Apply</a>
-          <a href="/leads" style={styles.link}>Dashboard</a>
+          <Link href="/" style={styles.link}>Home</Link>
+          <Link href="/pricing" style={styles.link}>Pricing</Link>
+          <Link href="/apply" style={styles.link}>Apply</Link>
+          <Link href="/leads" style={styles.link}>Dashboard</Link>
         </div>
       </nav>
 
@@ -65,17 +66,17 @@ export default function Home() {
         </p>
 
         <div style={styles.ctaRow}>
-          <a
+          <Link
             href="/apply"
             onClick={() => trackCTA("apply_click")}
             style={styles.primaryBtn}
           >
             Apply For Territory
-          </a>
+          </Link>
 
-          <a href="/pricing" style={styles.secondaryBtn}>
+          <Link href="/pricing" style={styles.secondaryBtn}>
             View Pricing
-          </a>
+          </Link>
         </div>
 
         <p style={styles.small}>
@@ -117,13 +118,14 @@ export default function Home() {
       {/* FINAL CTA */}
       <section style={styles.finalCta}>
         <h2>Ready to Claim Your Territory?</h2>
-        <a
+
+        <Link
           href="/apply"
           onClick={() => trackCTA("final_apply_click")}
           style={styles.primaryBtn}
         >
           Get Started
-        </a>
+        </Link>
       </section>
 
     </main>

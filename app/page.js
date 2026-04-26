@@ -1,6 +1,3 @@
-main page
-
-
 "use client";
 
 import { useEffect } from "react";
@@ -40,49 +37,95 @@ export default function Home() {
 
   return (
     <main style={styles.page}>
+
+      {/* NAVIGATION */}
+      <nav style={styles.nav}>
+        <div style={styles.logo}>RoofFlow</div>
+
+        <div style={styles.navLinks}>
+          <a href="/" style={styles.link}>Home</a>
+          <a href="/pricing" style={styles.link}>Pricing</a>
+          <a href="/apply" style={styles.link}>Apply</a>
+          <a href="/leads" style={styles.link}>Dashboard</a>
+        </div>
+      </nav>
+
+      {/* HERO */}
       <section style={styles.hero}>
-        <div style={styles.badge}>RoofFlow — Roofing Job Booking System</div>
+        <div style={styles.badge}>RoofFlow — Roofing Lead Booking System</div>
 
         <h1 style={styles.h1}>
-          We Book Roofing Jobs<br />Directly Into Your Calendar
+          Book Roofing Jobs<br />Directly Into Your Calendar
         </h1>
 
         <p style={styles.p}>
-          No shared leads. No chasing homeowners. No competition.
+          Stop paying for shared leads and wasted ads.
           <br /><br />
-          <b>Just qualified roofing appointments sent directly to you.</b>
+          RoofFlow delivers <b>exclusive, pre-qualified roofing appointments</b> directly to contractors.
         </p>
 
-        <a
-          href="/apply"
-          onClick={() => trackCTA("apply_click")}
-          style={styles.btn}
-        >
-          Apply For Your City
-        </a>
+        <div style={styles.ctaRow}>
+          <a
+            href="/apply"
+            onClick={() => trackCTA("apply_click")}
+            style={styles.primaryBtn}
+          >
+            Apply For Territory
+          </a>
+
+          <a href="/pricing" style={styles.secondaryBtn}>
+            View Pricing
+          </a>
+        </div>
 
         <p style={styles.small}>
-          We only onboard a limited number of contractors per city.
+          Limited contractors per city to protect lead quality.
         </p>
       </section>
 
+      {/* SECTION 1 */}
       <section style={styles.card}>
         <h2>Who This Is For</h2>
         <ul>
-          <li>Roofing contractors already doing consistent jobs</li>
-          <li>Companies spending on ads or lead platforms</li>
-          <li>Teams who want predictable booked work</li>
+          <li>Roofing companies already doing consistent installs</li>
+          <li>Contractors spending money on ads or lead platforms</li>
+          <li>Teams wanting predictable booked jobs</li>
         </ul>
       </section>
 
+      {/* SECTION 2 */}
       <section style={styles.card}>
-        <h2>What We Do Instead</h2>
+        <h2>How RoofFlow Works</h2>
         <ul>
-          <li>Filter homeowners before you see them</li>
-          <li>Identify real roofing intent</li>
-          <li>Book only confirmed appointments</li>
+          <li>We filter homeowner intent before you see them</li>
+          <li>We qualify roofing urgency automatically</li>
+          <li>We book confirmed appointments into your pipeline</li>
         </ul>
       </section>
+
+      {/* SECTION 3 */}
+      <section style={styles.cardHighlight}>
+        <h2>Why Contractors Switch</h2>
+        <p>
+          No more shared leads. No more cold calls. No more wasted ad spend.
+        </p>
+        <p>
+          Just real homeowners requesting roofing estimates.
+        </p>
+      </section>
+
+      {/* FINAL CTA */}
+      <section style={styles.finalCta}>
+        <h2>Ready to Claim Your Territory?</h2>
+        <a
+          href="/apply"
+          onClick={() => trackCTA("final_apply_click")}
+          style={styles.primaryBtn}
+        >
+          Get Started
+        </a>
+      </section>
+
     </main>
   );
 }
@@ -93,41 +136,85 @@ const styles = {
     background: "#0b1220",
     color: "#fff",
     minHeight: "100vh",
-    padding: 20,
   },
+
+  nav: {
+    display: "flex",
+    justifyContent: "space-between",
+    padding: "20px 30px",
+    borderBottom: "1px solid #1f2a44",
+  },
+
+  logo: {
+    fontWeight: 800,
+  },
+
+  navLinks: {
+    display: "flex",
+    gap: 20,
+  },
+
+  link: {
+    color: "#fff",
+    textDecoration: "none",
+    fontSize: 14,
+    opacity: 0.8,
+  },
+
   hero: {
     textAlign: "center",
-    padding: "80px 20px",
+    padding: "90px 20px",
   },
+
   badge: {
     fontSize: 12,
     opacity: 0.7,
     marginBottom: 10,
   },
+
   h1: {
-    fontSize: 48,
-    fontWeight: 800,
+    fontSize: 52,
+    fontWeight: 900,
     lineHeight: 1.1,
   },
+
   p: {
     maxWidth: 700,
     margin: "20px auto",
-    opacity: 0.8,
+    opacity: 0.85,
   },
-  small: {
-    fontSize: 12,
-    opacity: 0.6,
-    marginTop: 10,
+
+  ctaRow: {
+    display: "flex",
+    gap: 12,
+    justifyContent: "center",
+    marginTop: 25,
   },
-  btn: {
-    display: "inline-block",
+
+  primaryBtn: {
     background: "#4f46e5",
     padding: "14px 20px",
     borderRadius: 10,
     color: "#fff",
     textDecoration: "none",
-    marginTop: 20,
+    fontWeight: 600,
   },
+
+  secondaryBtn: {
+    background: "transparent",
+    border: "1px solid #4f46e5",
+    padding: "14px 20px",
+    borderRadius: 10,
+    color: "#fff",
+    textDecoration: "none",
+  },
+
+  small: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginTop: 15,
+  },
+
   card: {
     maxWidth: 900,
     margin: "20px auto",
@@ -135,5 +222,19 @@ const styles = {
     padding: 20,
     borderRadius: 12,
     border: "1px solid #24314d",
+  },
+
+  cardHighlight: {
+    maxWidth: 900,
+    margin: "20px auto",
+    background: "#1a2240",
+    padding: 20,
+    borderRadius: 12,
+    border: "1px solid #3a4b7a",
+  },
+
+  finalCta: {
+    textAlign: "center",
+    padding: "60px 20px",
   },
 };

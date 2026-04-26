@@ -6,10 +6,10 @@ export default function Home() {
       <div className="border-b bg-white sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-3 flex justify-between items-center text-xs">
           <span className="font-semibold tracking-wide">
-            ROOFFLOW DEMAND ENGINE
+            ROOFFLOW DEMAND NETWORK
           </span>
           <span className="text-red-600 font-semibold">
-            Territory-based contractor access system
+            Limited contractor density per territory
           </span>
         </div>
       </div>
@@ -19,17 +19,17 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6 text-center">
 
           <p className="text-sm text-gray-500 uppercase tracking-wider">
-            Exclusive roofing demand system
+            Verified homeowner demand system
           </p>
 
           <h1 className="mt-6 text-4xl md:text-6xl font-bold leading-tight">
-            Booked Roofing Jobs <br />
-            Delivered to Your Calendar
+            Roofing Jobs Delivered <br />
+            Directly Into Your Schedule
           </h1>
 
           <p className="mt-6 text-lg text-gray-600 max-w-2xl mx-auto">
-            RoofFlow delivers verified homeowners actively requesting roofing estimates in your territory.
-            No shared leads. No PPC waste. No cold traffic.
+            RoofFlow connects you with verified homeowners actively requesting roofing estimates in your territory.
+            No shared leads. No ad spend waste. No cold traffic.
           </p>
 
           <div className="mt-10 flex flex-wrap justify-center gap-4">
@@ -37,19 +37,19 @@ export default function Home() {
               href="/apply"
               className="bg-black text-white px-8 py-4 rounded-xl font-semibold"
             >
-              Check Territory Availability →
+              Check Territory Access →
             </a>
 
             <a
               href="#how"
               className="border px-8 py-4 rounded-xl font-medium"
             >
-              How it works
+              See how it works
             </a>
           </div>
 
           <p className="mt-6 text-xs text-gray-400">
-            Territory approval required • Limited contractor density per region
+            Territory approval required • Capacity-controlled contractor network
           </p>
         </div>
       </section>
@@ -61,7 +61,7 @@ export default function Home() {
           <div>
             <p className="text-3xl font-bold">+217%</p>
             <p className="text-gray-500 text-sm mt-2">
-              Average revenue increase in first 90 days
+              Average revenue lift within first 90 days
             </p>
           </div>
 
@@ -75,7 +75,7 @@ export default function Home() {
           <div>
             <p className="text-3xl font-bold">0</p>
             <p className="text-gray-500 text-sm mt-2">
-              Shared leads — all exclusive
+              Shared leads — fully exclusive territory access
             </p>
           </div>
 
@@ -87,11 +87,11 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6 text-center">
 
           <h2 className="text-3xl md:text-4xl font-bold">
-            Why most contractors waste budget on leads
+            Why most contractors stay stuck in expensive lead systems
           </h2>
 
           <p className="mt-4 text-gray-600 max-w-2xl mx-auto">
-            Traditional lead sources prioritize volume, not intent or booking readiness.
+            Most lead sources optimize for volume — not booking intent or job readiness.
           </p>
 
           <div className="mt-14 grid md:grid-cols-3 gap-8 text-left">
@@ -99,21 +99,21 @@ export default function Home() {
             <div className="border p-6 rounded-xl">
               <p className="font-semibold">Paid Ads</p>
               <p className="text-gray-500 text-sm mt-2">
-                High cost per click, low booking intent, unpredictable ROI.
+                Rising CPC, unpredictable conversion rates, and low buyer intent traffic.
               </p>
             </div>
 
             <div className="border p-6 rounded-xl">
-              <p className="font-semibold">Shared Leads</p>
+              <p className="font-semibold">Shared Lead Platforms</p>
               <p className="text-gray-500 text-sm mt-2">
-                3–7 contractors competing per homeowner inquiry.
+                Multiple contractors compete for the same homeowner inquiry.
               </p>
             </div>
 
             <div className="border p-6 rounded-xl">
               <p className="font-semibold">Low Intent Forms</p>
               <p className="text-gray-500 text-sm mt-2">
-                Most users are price shopping, not ready to book.
+                Most submissions are price shoppers, not ready-to-book customers.
               </p>
             </div>
 
@@ -126,29 +126,29 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6 text-center">
 
           <h2 className="text-3xl md:text-4xl font-bold">
-            How RoofFlow works
+            How RoofFlow operates
           </h2>
 
           <div className="mt-14 grid md:grid-cols-3 gap-8 text-left">
 
             <div className="bg-white p-6 rounded-xl border">
-              <p className="font-bold">1. Intent Capture</p>
+              <p className="font-bold">1. Intent Detection</p>
               <p className="text-gray-500 text-sm mt-2">
-                Homeowners submit verified roofing request signals.
+                We identify homeowners actively requesting roofing estimates.
               </p>
             </div>
 
             <div className="bg-white p-6 rounded-xl border">
-              <p className="font-bold">2. Lead Scoring</p>
+              <p className="font-bold">2. Qualification Filtering</p>
               <p className="text-gray-500 text-sm mt-2">
-                Each lead is filtered by urgency, roof age, and intent.
+                Each lead is scored based on urgency, property signals, and readiness.
               </p>
             </div>
 
             <div className="bg-white p-6 rounded-xl border">
-              <p className="font-bold">3. Booking Delivery</p>
+              <p className="font-bold">3. Appointment Delivery</p>
               <p className="text-gray-500 text-sm mt-2">
-                Only appointment-ready opportunities are delivered.
+                Only high-intent, booking-ready opportunities are delivered.
               </p>
             </div>
 
@@ -168,30 +168,30 @@ export default function Home() {
 
             <div className="border p-6 rounded-xl">
               <p className="text-sm text-gray-600">
-                “First 3 leads turned into $38K in booked jobs.”
+                “First 3 leads turned into $38K in booked roofing work.”
               </p>
-              <p className="mt-4 font-semibold">— Calgary Roofing Co.</p>
+              <p className="mt-4 font-semibold">— Calgary Roofing Contractor</p>
             </div>
 
             <div className="border p-6 rounded-xl">
               <p className="text-sm text-gray-600">
-                “Way higher intent than Google Ads ever gave us.”
+                “Higher intent than anything we got from Google Ads.”
               </p>
-              <p className="mt-4 font-semibold">— Edmonton Exteriors</p>
+              <p className="mt-4 font-semibold">— Edmonton Exterior Co.</p>
             </div>
 
             <div className="border p-6 rounded-xl">
               <p className="text-sm text-gray-600">
-                “We stopped using shared leads completely.”
+                “We fully replaced shared lead platforms.”
               </p>
-              <p className="mt-4 font-semibold">— Rockies Roofing</p>
+              <p className="mt-4 font-semibold">— Rockies Roofing Group</p>
             </div>
 
           </div>
         </div>
       </section>
 
-      {/* OBJECTION HANDLING */}
+      {/* OBJECTIONS */}
       <section className="bg-gray-50 py-24">
         <div className="max-w-4xl mx-auto px-6">
 
@@ -202,18 +202,24 @@ export default function Home() {
           <div className="mt-10 space-y-6">
 
             <div>
-              <p className="font-semibold">Do I share leads with other contractors?</p>
-              <p className="text-gray-500 text-sm mt-1">No. Territory access is exclusive.</p>
+              <p className="font-semibold">Are leads shared with other contractors?</p>
+              <p className="text-gray-500 text-sm mt-1">
+                No. Each territory is assigned to a limited number of contractors.
+              </p>
             </div>
 
             <div>
               <p className="font-semibold">How fast do leads come in?</p>
-              <p className="text-gray-500 text-sm mt-1">Most contractors receive leads within 24–72 hours of activation.</p>
+              <p className="text-gray-500 text-sm mt-1">
+                Most contractors receive their first opportunities within 24–72 hours.
+              </p>
             </div>
 
             <div>
-              <p className="font-semibold">Is this PPC or ads?</p>
-              <p className="text-gray-500 text-sm mt-1">No. This is intent-based homeowner demand, not click traffic.</p>
+              <p className="font-semibold">Is this paid advertising?</p>
+              <p className="text-gray-500 text-sm mt-1">
+                No. This is intent-based homeowner demand, not ad traffic.
+              </p>
             </div>
 
           </div>
@@ -229,7 +235,7 @@ export default function Home() {
           </h2>
 
           <p className="mt-4 text-gray-600">
-            Only a limited number of contractors are activated per region to maintain lead quality.
+            Contractor capacity is limited per region to preserve lead quality and conversion rates.
           </p>
 
           <div className="mt-10">
@@ -242,7 +248,7 @@ export default function Home() {
           </div>
 
           <p className="mt-6 text-xs text-gray-400">
-            No commitment • Approval within 24 hours • Performance-based system
+            No contracts • Approval within 24 hours • Performance-based activation
           </p>
 
         </div>
@@ -250,7 +256,7 @@ export default function Home() {
 
       {/* FOOTER */}
       <footer className="border-t py-10 text-center text-xs text-gray-400">
-        RoofFlow Demand Engine © 2026
+        RoofFlow Demand Network © 2026
       </footer>
 
     </main>

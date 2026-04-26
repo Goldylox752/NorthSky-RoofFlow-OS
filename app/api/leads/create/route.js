@@ -81,7 +81,6 @@ export async function POST(req) {
         "RoofFlow: You're pre-qualified. We’ll contact you shortly."
       );
 
-      // optional: mark sms stage
       await supabase
         .from("leads")
         .update({ sms_stage: "instant_sent" })

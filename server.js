@@ -51,7 +51,7 @@ async function askOllama(prompt) {
           {
             role: "system",
             content:
-              "You are a high-conversion roofing sales closer. Be short, direct, and always push toward booking an inspection.",
+              "You are a high-conversion roofing sales closer. You ask ONE question at a time, keep replies short, and always move toward booking an inspection.",
           },
           { role: "user", content: prompt },
         ],
@@ -60,10 +60,10 @@ async function askOllama(prompt) {
     });
 
     const data = await res.json();
-    return data?.message?.content || "When would you like an inspection?";
+    return data?.message?.content || "When would you like a quick inspection?";
   } catch (err) {
     console.error("Ollama error:", err.message);
-    return "Are you available for a quick roof inspection this week?";
+    return "Are you available this week for a quick roof inspection?";
   }
 }
 
@@ -82,7 +82,7 @@ const PLANS = {
 function dripSequence() {
   return [
     { delay: 0, text: "Thanks — we received your request." },
-    { delay: 3600000, text: "We only accept limited contractors per area." },
+    { delay: 3600000, text: "We only take limited contractors per area." },
     { delay: 86400000, text: "Still interested in exclusive roofing leads?" },
     { delay: 172800000, text: "Final reminder — spots are almost full." },
   ];
@@ -110,7 +110,7 @@ function sendDrip(phone, messages) {
 // HEALTH CHECK
 // =====================
 app.get("/", (req, res) => {
-  res.send("🚀 RoofFlow API LIVE (Ollama Closer Mode)");
+  res.send("🚀 RoofFlow API LIVE (AI Closer Mode)");
 });
 
 // =====================
@@ -182,7 +182,7 @@ app.post("/api/lead", async (req, res) => {
 });
 
 // =====================
-// SMS BOT (CLOSER AI)
+// SMS BOT (AI CLOSER)
 // =====================
 app.post("/sms", async (req, res) => {
   try {

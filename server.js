@@ -9,8 +9,18 @@ const express = require("express");
 const cors = require("cors");
 const twilio = require("twilio");
 const OpenAI = require("openai");
+const Stripe = require("stripe");
 
 const app = express();
+
+// =====================
+// MIDDLEWARE
+// =====================
+// Stripe webhook needs raw body
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" })
+);
 
 app.use(cors());
 app.use(express.json());
@@ -23,12 +33,30 @@ const {
   TWILIO_SID,
   TWILIO_AUTH_TOKEN,
   TWILIO_PHONE,
-  BUSINESS_PHONE,
+  STRIPE_SECRET_KEY,
   PORT,
 } = process.env;
 
 // =====================
-// INIT
+// SAFETY CHECK
+// =====================
+const requiredEnv = [
+  "OPENAI_API_KEY",
+  "TWILIO_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_PHONE",
+  "STRIPE_SECRET_KEY",
+];
+
+for (const key of requiredEnv) {
+  if (!process.env[key]) {
+    console.error(`❌ Missing env variable: ${key}`);
+    process.exit(1);
+  }
+}
+
+// =====================
+// INIT SERVICES
 // =====================
 const openai = new OpenAI({
   apiKey: OPENAI_API_KEY,
@@ -36,32 +64,20 @@ const openai = new OpenAI({
 
 const twilioClient = twilio(TWILIO_SID, TWILIO_AUTH_TOKEN);
 
+const stripe = new Stripe(STRIPE_SECRET_KEY);
+
 // =====================
-// SIMPLE LEAD STORE (MVP CRM)
+// PRICING
 // =====================
-const leads = new Map();
+const PLANS = {
+  starter: 49900,
+  growth: 99900,
+  domination: 199900,
+};
 
 // =====================
 // DRIP SYSTEM
 // =====================
-function sendDrip(phone, messages) {
-  messages.forEach((msg, i) => {
-    setTimeout(async () => {
-      try {
-        await twilioClient.messages.create({
-          body: msg.text,
-          from: TWILIO_PHONE,
-          to: phone,
-        });
-
-        console.log(`📤 Drip ${i + 1} sent to ${phone}`);
-      } catch (err) {
-        console.error("Drip error:", err.message);
-      }
-    }, msg.delay);
-  });
-}
-
 function dripSequence() {
   return [
     {
@@ -83,50 +99,127 @@ function dripSequence() {
   ];
 }
 
+function sendDrip(phone, messages) {
+  messages.forEach((msg, i) => {
+    setTimeout(async () => {
+      try {
+        await twilioClient.messages.create({
+          body: msg.text,
+          from: TWILIO_PHONE,
+          to: phone,
+        });
+
+        console.log(`📤 Drip ${i + 1} sent to ${phone}`);
+      } catch (err) {
+        console.error("Drip error:", err.message);
+      }
+    }, msg.delay);
+  });
+}
+
 // =====================
-// HOME PAGE (FIXES ERROR)
+// HOME ROUTE
 // =====================
 app.get("/", (req, res) => {
   res.send(`
     <html>
       <body style="font-family: Arial; text-align:center; padding:50px;">
         <h1>🚀 AI Lead System Live</h1>
-        <p>SMS + AI + Drip system running</p>
+        <p>Stripe + Twilio + OpenAI + Drip System Active</p>
       </body>
     </html>
   `);
 });
 
 // =====================
-// LEAD CAPTURE (🔥 MONEY ROUTE)
+// STRIPE CHECKOUT
+// =====================
+app.post("/api/checkout", async (req, res) => {
+  try {
+    const { plan, email, phone } = req.body;
+
+    if (!PLANS[plan]) {
+      return res.status(400).json({ error: "Invalid plan" });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: `AI Roofing Lead System - ${plan}`,
+            },
+            unit_amount: PLANS[plan],
+          },
+          quantity: 1,
+        },
+      ],
+
+      success_url: "https://your-domain.com/success",
+      cancel_url: "https://your-domain.com/cancel",
+
+      metadata: {
+        email,
+        phone,
+        plan,
+      },
+    });
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error("Stripe error:", err);
+    res.status(500).json({ error: "Checkout failed" });
+  }
+});
+
+// =====================
+// STRIPE WEBHOOK
+// =====================
+app.post("/api/stripe/webhook", (req, res) => {
+  let event;
+
+  try {
+    event = JSON.parse(req.body);
+  } catch (err) {
+    return res.status(400).send("Invalid webhook");
+  }
+
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object;
+
+    const phone = session.metadata?.phone;
+
+    console.log("💰 PAYMENT SUCCESS:", session.metadata);
+
+    if (phone) {
+      sendDrip(phone, dripSequence());
+    }
+  }
+
+  res.json({ received: true });
+});
+
+// =====================
+// LEAD CAPTURE (FREE USERS / TEST MODE)
 // =====================
 app.post("/api/lead", async (req, res) => {
   try {
-    const { email, phone, plan } = req.body;
+    const { email, phone } = req.body;
 
     if (!email || !phone) {
       return res.status(400).json({ error: "Missing fields" });
     }
 
-    const lead = {
-      email,
-      phone,
-      plan,
-      time: Date.now(),
-    };
-
-    leads.set(phone, lead);
-
-    console.log("📥 New Lead:", lead);
-
-    // 1. instant SMS
     await twilioClient.messages.create({
-      body: "Thanks — we received your request and will review it shortly.",
+      body: "Thanks — we received your request and will follow up shortly.",
       from: TWILIO_PHONE,
       to: phone,
     });
 
-    // 2. start drip
     sendDrip(phone, dripSequence());
 
     res.json({ success: true });
@@ -137,25 +230,26 @@ app.post("/api/lead", async (req, res) => {
 });
 
 // =====================
-// SMS AI REPLY (your existing feature)
+// SMS AI BOT
 // =====================
 app.post("/sms", async (req, res) => {
   try {
-    const incomingMsg = req.body?.Body;
+    const msg = req.body?.Body;
     const from = req.body?.From;
 
-    if (!incomingMsg || !from) return res.sendStatus(200);
+    if (!msg || !from) return res.sendStatus(200);
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "You are a short helpful business assistant." },
-        { role: "user", content: incomingMsg },
+        { role: "system", content: "You are a short business assistant." },
+        { role: "user", content: msg },
       ],
     });
 
     const reply =
-      completion.choices?.[0]?.message?.content || "Thanks — we’ll follow up.";
+      completion.choices?.[0]?.message?.content ||
+      "Thanks — we’ll follow up.";
 
     await twilioClient.messages.create({
       body: reply,
@@ -176,5 +270,5 @@ app.post("/sms", async (req, res) => {
 const port = PORT || 3000;
 
 app.listen(port, () => {
-  console.log(`🚀 Server running on ${port}`);
+  console.log(`🚀 Server running on port ${port}`);
 });

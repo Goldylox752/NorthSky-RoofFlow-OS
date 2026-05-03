@@ -1,6 +1,3 @@
-// =====================
-// ENV SETUP
-// =====================
 if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
@@ -21,49 +18,37 @@ const {
   TWILIO_PHONE,
   STRIPE_SECRET_KEY,
   FRONTEND_URL,
+  OLLAMA_URL, // 👈 ADD THIS (IMPORTANT)
 } = process.env;
 
 // =====================
-// SAFETY CHECK (Vercel-safe)
+// SAFE INIT (NO CRASH)
 // =====================
-const requiredEnv = [
-  "TWILIO_SID",
-  "TWILIO_AUTH_TOKEN",
-  "TWILIO_PHONE",
-  "STRIPE_SECRET_KEY",
-  "FRONTEND_URL",
-];
+const twilioClient =
+  TWILIO_SID && TWILIO_AUTH_TOKEN
+    ? twilio(TWILIO_SID, TWILIO_AUTH_TOKEN)
+    : null;
 
-requiredEnv.forEach((key) => {
-  if (!process.env[key]) {
-    console.warn("⚠️ Missing env:", key);
-  }
-});
-
-// =====================
-// INIT SERVICES
-// =====================
-const twilioClient = twilio(TWILIO_SID, TWILIO_AUTH_TOKEN);
-const stripe = new Stripe(STRIPE_SECRET_KEY);
+const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 
 // =====================
 // MIDDLEWARE
 // =====================
-app.use(cors({ origin: FRONTEND_URL }));
+app.use(cors({ origin: FRONTEND_URL || "*" }));
 app.use(express.json());
 
 // =====================
-// OLLAMA AI FUNCTION
+// OLLAMA FUNCTION (FIXED FOR VPS)
 // =====================
 async function askOllama(prompt) {
   try {
-    const res = await fetch("http://localhost:11434/api/chat", {
+    const res = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "llama3",
         messages: [
-          { role: "system", content: "You are a short, helpful assistant." },
+          { role: "system", content: "Short helpful assistant." },
           { role: "user", content: prompt },
         ],
         stream: false,
@@ -71,10 +56,12 @@ async function askOllama(prompt) {
     });
 
     const data = await res.json();
-    return data?.message?.content || "Sorry, no response.";
+    return data?.message?.content || "No response";
   } catch (err) {
     console.error("Ollama error:", err.message);
-    return "AI temporarily unavailable.";
+
+    // fallback so SMS NEVER breaks
+    return "Thanks for your message — we’ll get back shortly.";
   }
 }
 
@@ -100,6 +87,8 @@ function dripSequence() {
 }
 
 function sendDrip(phone, messages) {
+  if (!twilioClient) return;
+
   messages.forEach((msg) => {
     setTimeout(async () => {
       try {
@@ -116,25 +105,21 @@ function sendDrip(phone, messages) {
 }
 
 // =====================
-// HEALTH CHECK
+// HEALTH
 // =====================
 app.get("/", (req, res) => {
-  res.send("🚀 RoofFlow API LIVE (Ollama Mode)");
+  res.send("🚀 RoofFlow API LIVE (Ollama + Safe Mode)");
 });
 
 // =====================
-// EVENT TRACKING
-// =====================
-app.post("/api/event", (req, res) => {
-  console.log("EVENT:", req.body);
-  res.json({ success: true });
-});
-
-// =====================
-// CHECKOUT (Stripe)
+// CHECKOUT (SAFE)
 // =====================
 app.post("/api/checkout", async (req, res) => {
   try {
+    if (!stripe) {
+      return res.status(500).json({ error: "Stripe not configured" });
+    }
+
     const { plan, email, phone } = req.body;
 
     if (!PLANS[plan]) {
@@ -148,9 +133,7 @@ app.post("/api/checkout", async (req, res) => {
         {
           price_data: {
             currency: "usd",
-            product_data: {
-              name: `RoofFlow AI - ${plan}`,
-            },
+            product_data: { name: `RoofFlow AI - ${plan}` },
             unit_amount: PLANS[plan],
           },
           quantity: 1,
@@ -163,41 +146,13 @@ app.post("/api/checkout", async (req, res) => {
 
     res.json({ url: session.url });
   } catch (err) {
-    console.error("Checkout error:", err.message);
+    console.error(err);
     res.status(500).json({ error: "Checkout failed" });
   }
 });
 
 // =====================
-// STRIPE WEBHOOK
-// =====================
-app.post(
-  "/api/stripe/webhook",
-  express.raw({ type: "application/json" }),
-  (req, res) => {
-    let event;
-
-    try {
-      event = JSON.parse(req.body.toString());
-    } catch {
-      return res.status(400).send("Invalid webhook");
-    }
-
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      const phone = session.metadata?.phone;
-
-      console.log("💰 PAYMENT:", session.metadata);
-
-      if (phone) sendDrip(phone, dripSequence());
-    }
-
-    res.json({ received: true });
-  }
-);
-
-// =====================
-// LEADS
+// LEAD
 // =====================
 app.post("/api/lead", async (req, res) => {
   try {
@@ -205,23 +160,25 @@ app.post("/api/lead", async (req, res) => {
 
     if (!phone) return res.status(400).json({ error: "Missing phone" });
 
-    await twilioClient.messages.create({
-      body: "Thanks — we’ll follow up shortly.",
-      from: TWILIO_PHONE,
-      to: phone,
-    });
+    if (twilioClient) {
+      await twilioClient.messages.create({
+        body: "Thanks — we’ll follow up shortly.",
+        from: TWILIO_PHONE,
+        to: phone,
+      });
+    }
 
     sendDrip(phone, dripSequence());
 
     res.json({ success: true });
   } catch (err) {
-    console.error("Lead error:", err.message);
+    console.error(err);
     res.status(500).json({ error: "Lead error" });
   }
 });
 
 // =====================
-// SMS BOT (OLLAMA AI)
+// SMS BOT (OLLAMA)
 // =====================
 app.post("/sms", async (req, res) => {
   try {
@@ -232,16 +189,18 @@ app.post("/sms", async (req, res) => {
 
     const reply = await askOllama(msg);
 
-    await twilioClient.messages.create({
-      body: reply,
-      from: TWILIO_PHONE,
-      to: from,
-    });
+    if (twilioClient) {
+      await twilioClient.messages.create({
+        body: reply,
+        from: TWILIO_PHONE,
+        to: from,
+      });
+    }
 
     res.sendStatus(200);
   } catch (err) {
     console.error("SMS error:", err.message);
-    res.sendStatus(200); // never break webhook
+    res.sendStatus(200);
   }
 });
 

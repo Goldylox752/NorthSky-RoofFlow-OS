@@ -7,45 +7,65 @@ import { supabase } from "@/lib/supabase";
 export default function Dashboard() {
   const [leads, setLeads] = useState([]);
   const [connected, setConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState(null);
 
   const channelRef = useRef(null);
 
   // ===============================
-  // UPSERT ENGINE (SAFE MERGE)
+  // SAFE UPSERT ENGINE (NO DUPES, NO RACES)
   // ===============================
   const upsertLead = (incoming) => {
+    if (!incoming?.id) return;
+
     setLeads((prev) => {
       const idx = prev.findIndex((l) => l.id === incoming.id);
 
+      const updatedLead = {
+        ...(idx !== -1 ? prev[idx] : {}),
+        ...incoming,
+        _updatedAt: Date.now(),
+      };
+
+      let next;
+
       if (idx !== -1) {
-        const copy = [...prev];
-        copy[idx] = { ...copy[idx], ...incoming };
-        return copy;
+        next = [...prev];
+        next[idx] = updatedLead;
+      } else {
+        next = [updatedLead, ...prev];
       }
 
-      return [incoming, ...prev].slice(0, 150);
+      // keep memory stable (important for SaaS scale)
+      return next.slice(0, 200);
     });
+
+    setLastUpdate(new Date().toISOString());
   };
 
   // ===============================
-  // SNAPSHOT LOAD (INITIAL STATE)
+  // SNAPSHOT SYNC (INITIAL STATE)
   // ===============================
   const loadSnapshot = async () => {
     try {
+      setLoading(true);
+
       const { data } = await supabase
         .from("leads")
         .select("*")
         .order("created_at", { ascending: false })
         .limit(50);
 
-      if (data) setLeads(data);
+      setLeads(data || []);
     } catch (e) {
       console.error("Snapshot failed:", e);
+    } finally {
+      setLoading(false);
     }
   };
 
   // ===============================
-  // REAL-TIME ENGINE (SUPABASE)
+  // REALTIME ENGINE (SUPABASE CORE)
   // ===============================
   useEffect(() => {
     loadSnapshot();
@@ -54,7 +74,11 @@ export default function Dashboard() {
       .channel("leads-realtime")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "leads" },
+        {
+          event: "*",
+          schema: "public",
+          table: "leads",
+        },
         (payload) => {
           const row = payload.new;
           if (!row) return;
@@ -74,33 +98,49 @@ export default function Dashboard() {
   }, []);
 
   // ===============================
-  // UI
+  // UI STATUS COLOR
   // ===============================
+  const statusColor = connected ? "#22c55e" : "#ef4444";
+
   return (
     <main style={styles.page}>
       <Navbar />
 
       <div style={styles.container}>
+        {/* HEADER */}
         <header style={styles.header}>
           <div>
             <h1 style={styles.title}>Live Lead Feed</h1>
-            <p style={styles.sub}>Real-time SaaS marketplace engine</p>
+
+            <p style={styles.sub}>
+              Real-time marketplace operations dashboard
+            </p>
+
+            <p style={styles.meta}>
+              {loading
+                ? "Syncing data..."
+                : `Last update: ${lastUpdate || "—"}`}
+            </p>
           </div>
 
-          <div
-            style={{
-              ...styles.status,
-              color: connected ? "#22c55e" : "#ef4444",
-            }}
-          >
+          <div style={{ ...styles.status, color: statusColor }}>
             ● {connected ? "LIVE" : "CONNECTING"}
           </div>
         </header>
 
-        {leads.length === 0 && (
-          <div style={styles.empty}>Waiting for leads...</div>
+        {/* EMPTY STATE */}
+        {!loading && leads.length === 0 && (
+          <div style={styles.empty}>
+            Waiting for incoming leads...
+          </div>
         )}
 
+        {/* LOADING STATE */}
+        {loading && (
+          <div style={styles.empty}>Loading live marketplace...</div>
+        )}
+
+        {/* GRID */}
         <div style={styles.grid}>
           {leads.map((l) => (
             <div key={l.id} style={styles.card}>
@@ -109,10 +149,11 @@ export default function Dashboard() {
                 <span style={badge(l.status)}>{l.status}</span>
               </div>
 
-              <p style={styles.text}>⚡ Score: {l.score}</p>
+              <p style={styles.text}>⚡ Score: {l.score ?? 0}</p>
 
               <p style={styles.text}>
-                🧠 Contractor: {l.assigned_contractor_id || "pending"}
+                🧠 Contractor:{" "}
+                {l.assigned_contractor_id || "pending"}
               </p>
 
               <p style={styles.textSmall}>

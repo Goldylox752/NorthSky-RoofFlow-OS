@@ -1,69 +1,107 @@
 import { supabase } from "@/lib/supabase";
 
 // ===============================
-// GET BALANCE
+// GET BALANCE (READ ONLY)
 // ===============================
 export async function getBalance(contractorId) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("contractors")
     .select("balance_cents")
     .eq("id", contractorId)
     .single();
 
+  if (error) return 0;
+
   return data?.balance_cents || 0;
 }
 
-// ===============================
-// DEDUCT CREDIT (SAFE)
-// ===============================
+// =====================================================
+// DEDUCT CREDIT (ATOMIC + SAFE + RACE CONDITION PROOF)
+// =====================================================
 export async function deductCredit(contractorId, amount, leadId) {
-  const balance = await getBalance(contractorId);
-
-  if (balance < amount) {
-    return { success: false, error: "INSUFFICIENT_FUNDS" };
+  if (!amount || amount <= 0) {
+    return { success: false, error: "INVALID_AMOUNT" };
   }
 
-  // atomic update
-  const { error } = await supabase
+  // ===============================
+  // ATOMIC UPDATE (NO READ-FIRST)
+  // ===============================
+  const { data, error } = await supabase
     .from("contractors")
     .update({
-      balance_cents: balance - amount,
+      balance_cents: supabase.sql`
+        balance_cents - ${amount}
+      `,
     })
-    .eq("id", contractorId);
+    .eq("id", contractorId)
+    .gte("balance_cents", amount) // prevents overdraft
+    .select("balance_cents")
+    .single();
 
-  if (error) {
-    return { success: false, error: "UPDATE_FAILED" };
+  if (error || !data) {
+    return {
+      success: false,
+      error: "INSUFFICIENT_FUNDS",
+    };
   }
 
-  // log transaction
+  // ===============================
+  // LEDGER ENTRY (SOURCE OF TRUTH)
+  // ===============================
   await supabase.from("transactions").insert({
     contractor_id: contractorId,
     type: "debit",
     amount_cents: amount,
-    lead_id: leadId,
+    lead_id,
     description: "Lead claim purchase",
+    created_at: new Date().toISOString(),
   });
 
-  return { success: true };
+  return {
+    success: true,
+    balance: data.balance_cents,
+  };
 }
 
-// ===============================
-// ADD CREDIT (STRIPE TOPUP)
-// ===============================
+// =====================================================
+// ADD CREDIT (ATOMIC TOP-UP)
+// =====================================================
 export async function addCredit(contractorId, amount) {
-  const balance = await getBalance(contractorId);
+  if (!amount || amount <= 0) {
+    return { success: false, error: "INVALID_AMOUNT" };
+  }
 
-  await supabase
+  // ===============================
+  // ATOMIC INCREMENT
+  // ===============================
+  const { data, error } = await supabase
     .from("contractors")
     .update({
-      balance_cents: balance + amount,
+      balance_cents: supabase.sql`
+        balance_cents + ${amount}
+      `,
     })
-    .eq("id", contractorId);
+    .eq("id", contractorId)
+    .select("balance_cents")
+    .single();
 
+  if (error) {
+    return { success: false, error: "TOPUP_FAILED" };
+  }
+
+  // ===============================
+  // LEDGER ENTRY
+  // ===============================
   await supabase.from("transactions").insert({
     contractor_id: contractorId,
     type: "credit",
     amount_cents: amount,
     description: "Wallet top-up",
+    created_at: new Date().toISOString(),
   });
+
+  return {
+    success: true,
+    balance: data.balance_cents,
+  };
 }

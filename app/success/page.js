@@ -1,22 +1,121 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 export default function SuccessPage() {
+  const [status, setStatus] = useState("verifying"); // verifying | active | error
+  const [message, setMessage] = useState("");
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+  useEffect(() => {
+    const verify = async () => {
+      try {
+        const session_id = new URLSearchParams(window.location.search).get(
+          "session_id"
+        );
+
+        if (!session_id) {
+          setStatus("error");
+          setMessage("Missing session ID");
+          return;
+        }
+
+        if (!API_URL) {
+          setStatus("error");
+          setMessage("Backend not configured");
+          return;
+        }
+
+        const res = await fetch(
+          `${API_URL}/api/stripe/verify-session`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ session_id }),
+          }
+        );
+
+        const data = await res.json();
+
+        if (!data.success) {
+          throw new Error(data.error || "Verification failed");
+        }
+
+        setStatus("active");
+      } catch (err) {
+        console.error(err);
+        setStatus("error");
+        setMessage("Payment verification failed");
+      }
+    };
+
+    verify();
+  }, []);
+
+  // =====================
+  // LOADING STATE
+  // =====================
+  if (status === "verifying") {
+    return (
+      <main style={styles.container}>
+        <div style={styles.card}>
+          <h1 style={styles.title}>Verifying Payment...</h1>
+          <p style={styles.text}>
+            Activating your contractor account in real time.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  // =====================
+  // ERROR STATE
+  // =====================
+  if (status === "error") {
+    return (
+      <main style={styles.container}>
+        <div style={styles.card}>
+          <h1 style={styles.title}>⚠️ Something went wrong</h1>
+          <p style={styles.text}>{message}</p>
+
+          <div style={styles.actions}>
+            <Link href="/" style={styles.secondaryBtn}>
+              Back to Home
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // =====================
+  // SUCCESS STATE (REAL ACTIVATION CONFIRMED)
+  // =====================
   return (
     <main style={styles.container}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Payment Successful 🎉</h1>
+        <h1 style={styles.title}>🎉 You're Activated</h1>
 
         <p style={styles.text}>
-          Your payment went through successfully.
+          Your contractor account is now live in the RoofFlow system.
         </p>
 
         <p style={styles.subtext}>
-          Your account is now being activated. This usually takes a few seconds
-          while Stripe confirms your subscription.
+          You will start receiving exclusive roofing leads as they come in.
         </p>
 
+        <div style={styles.statusBox}>
+          <p>✔ Stripe subscription confirmed</p>
+          <p>✔ Contractor activated in system</p>
+          <p>✔ Lead routing enabled</p>
+        </div>
+
         <p style={styles.note}>
-          If access doesn’t appear instantly, refresh your dashboard in ~10–15 seconds.
+          First leads may arrive within minutes depending on your city demand.
         </p>
 
         <div style={styles.actions}>
@@ -32,72 +131,3 @@ export default function SuccessPage() {
     </main>
   );
 }
-
-const styles = {
-  container: {
-    fontFamily: "Arial, sans-serif",
-    minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    background: "#0b1220",
-    color: "#fff",
-    padding: "20px",
-  },
-
-  card: {
-    background: "#111827",
-    padding: "40px",
-    borderRadius: "16px",
-    border: "1px solid #1f2937",
-    textAlign: "center",
-    maxWidth: "520px",
-  },
-
-  title: {
-    fontSize: "32px",
-    marginBottom: "10px",
-  },
-
-  text: {
-    fontSize: "16px",
-    color: "#d1d5db",
-    marginBottom: "10px",
-  },
-
-  subtext: {
-    fontSize: "14px",
-    color: "#9ca3af",
-    marginBottom: "15px",
-  },
-
-  note: {
-    fontSize: "12px",
-    color: "#6b7280",
-    marginBottom: "30px",
-  },
-
-  actions: {
-    display: "flex",
-    gap: "12px",
-    justifyContent: "center",
-    flexWrap: "wrap",
-  },
-
-  primaryBtn: {
-    padding: "12px 18px",
-    background: "#2563eb",
-    color: "#fff",
-    borderRadius: "10px",
-    textDecoration: "none",
-    fontWeight: "bold",
-  },
-
-  secondaryBtn: {
-    padding: "12px 18px",
-    background: "#1f2937",
-    color: "#fff",
-    borderRadius: "10px",
-    textDecoration: "none",
-  },
-};

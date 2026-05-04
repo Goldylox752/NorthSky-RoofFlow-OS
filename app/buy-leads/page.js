@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+const API_URL = "https://your-render-app.onrender.com";
+
 export default function BuyLeads() {
   const [loading, setLoading] = useState(null);
 
@@ -9,7 +11,7 @@ export default function BuyLeads() {
     try {
       setLoading(priceId);
 
-      const res = await fetch("/api/create-checkout-session", {
+      const res = await fetch(`${API_URL}/api/checkout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

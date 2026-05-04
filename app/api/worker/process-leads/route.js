@@ -1,14 +1,14 @@
-import { getQueuedLeads } from "@/lib/queueLead";
+import { getQueuedLeads, markLeadProcessing, markLeadDone, markLeadFailed } from "@/lib/queueLead";
 import { aiScoreLead } from "@/lib/aiScoreLead";
 
 // =====================
-// AI QUEUE WORKER
+// AI QUEUE WORKER (UPGRADED)
 // =====================
 export async function GET() {
   try {
     const leads = await getQueuedLeads();
 
-    if (!leads || leads.length === 0) {
+    if (!leads?.length) {
       return Response.json({
         ok: true,
         message: "No leads in queue",
@@ -16,31 +16,44 @@ export async function GET() {
       });
     }
 
-    const results = [];
+    let processed = 0;
+    let failed = 0;
 
     // =====================
-    // PROCESS LEADS SAFELY
+    // PROCESS SEQUENTIALLY (SAFE MODE)
     // =====================
     for (const lead of leads) {
-      if (!lead) continue;
+      if (!lead?.id) continue;
 
       try {
+        // 🔒 Lock lead so it can't be processed twice
+        await markLeadProcessing(lead.id);
+
+        // 🤖 AI scoring
         const scoredLead = await aiScoreLead(lead);
 
-        if (scoredLead) {
-          results.push(scoredLead);
+        if (!scoredLead) {
+          throw new Error("AI returned empty result");
         }
+
+        // ✅ Mark success
+        await markLeadDone(lead.id, scoredLead);
+
+        processed++;
       } catch (err) {
-        console.error(
-          `AI scoring failed for lead ${lead?.id || "unknown"}:`,
-          err.message
-        );
+        console.error(`Lead ${lead?.id} failed:`, err.message);
+
+        failed++;
+
+        // 🔁 mark retry-safe failure
+        await markLeadFailed(lead.id, err.message);
       }
     }
 
     return Response.json({
       ok: true,
-      processed: results.length,
+      processed,
+      failed,
       total: leads.length,
     });
   } catch (err) {

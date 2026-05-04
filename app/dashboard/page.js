@@ -2,19 +2,16 @@
 
 import { useEffect, useState, useRef } from "react";
 import Navbar from "@/components/Navbar";
+import { supabase } from "@/lib/supabase";
 
 export default function Dashboard() {
   const [leads, setLeads] = useState([]);
   const [connected, setConnected] = useState(false);
 
-  const eventRef = useRef(null);
-  const lastEventId = useRef(null);
-  const reconnectTimer = useRef(null);
-
-  const API = process.env.NEXT_PUBLIC_API_URL;
+  const channelRef = useRef(null);
 
   // ===============================
-  // SMART UPSERT MERGE ENGINE
+  // UPSERT ENGINE (SAFE MERGE)
   // ===============================
   const upsertLead = (incoming) => {
     setLeads((prev) => {
@@ -31,74 +28,48 @@ export default function Dashboard() {
   };
 
   // ===============================
-  // INITIAL STATE SYNC (IMPORTANT FIX)
+  // SNAPSHOT LOAD (INITIAL STATE)
   // ===============================
   const loadSnapshot = async () => {
     try {
-      const res = await fetch(`${API}/api/leads?limit=50`);
-      const data = await res.json();
+      const { data } = await supabase
+        .from("leads")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
 
-      if (data?.leads) {
-        setLeads(data.leads);
-      }
+      if (data) setLeads(data);
     } catch (e) {
-      console.error("Snapshot load failed:", e);
+      console.error("Snapshot failed:", e);
     }
   };
 
   // ===============================
-  // REAL-TIME STREAM
+  // REAL-TIME ENGINE (SUPABASE)
   // ===============================
   useEffect(() => {
-    if (!API) return;
-
     loadSnapshot();
 
-    const connect = () => {
-      const es = new EventSource(
-        `${API}/api/leads/stream?after=${lastEventId.current || ""}`
-      );
+    const channel = supabase
+      .channel("leads-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "leads" },
+        (payload) => {
+          const row = payload.new;
+          if (!row) return;
 
-      eventRef.current = es;
-
-      es.onopen = () => setConnected(true);
-
-      es.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-
-          // ignore old/duplicate events
-          if (
-            data.eventId &&
-            data.eventId === lastEventId.current
-          ) {
-            return;
-          }
-
-          lastEventId.current = data.eventId;
-
-          upsertLead(data);
-        } catch (err) {
-          console.error("Stream parse error:", err);
+          upsertLead(row);
         }
-      };
+      )
+      .subscribe((status) => {
+        setConnected(status === "SUBSCRIBED");
+      });
 
-      es.onerror = () => {
-        setConnected(false);
-        es.close();
-
-        if (reconnectTimer.current)
-          clearTimeout(reconnectTimer.current);
-
-        reconnectTimer.current = setTimeout(connect, 3000);
-      };
-    };
-
-    connect();
+    channelRef.current = channel;
 
     return () => {
-      eventRef.current?.close();
-      clearTimeout(reconnectTimer.current);
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -113,13 +84,16 @@ export default function Dashboard() {
         <header style={styles.header}>
           <div>
             <h1 style={styles.title}>Live Lead Feed</h1>
-            <p style={styles.sub}>
-              Real-time SaaS marketplace engine
-            </p>
+            <p style={styles.sub}>Real-time SaaS marketplace engine</p>
           </div>
 
-          <div style={{ ...styles.status, color: connected ? "#22c55e" : "#ef4444" }}>
-            ● {connected ? "LIVE" : "RECONNECTING"}
+          <div
+            style={{
+              ...styles.status,
+              color: connected ? "#22c55e" : "#ef4444",
+            }}
+          >
+            ● {connected ? "LIVE" : "CONNECTING"}
           </div>
         </header>
 
@@ -150,70 +124,4 @@ export default function Dashboard() {
       </div>
     </main>
   );
-}
-
-// ===============================
-const styles = {
-  page: {
-    background: "#0b1220",
-    minHeight: "100vh",
-    color: "white",
-  },
-  container: {
-    padding: 40,
-    maxWidth: 1100,
-    margin: "0 auto",
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  title: { fontSize: 28, fontWeight: "bold" },
-  sub: { opacity: 0.6, fontSize: 13 },
-  status: { fontSize: 13, fontWeight: 600 },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-    gap: 12,
-  },
-  card: {
-    background: "#111827",
-    padding: 14,
-    borderRadius: 10,
-    border: "1px solid #1f2937",
-  },
-  row: {
-    display: "flex",
-    justifyContent: "space-between",
-  },
-  text: { fontSize: 13, opacity: 0.85, marginTop: 6 },
-  textSmall: { fontSize: 12, opacity: 0.6 },
-  empty: {
-    padding: 20,
-    background: "#111827",
-    borderRadius: 10,
-    textAlign: "center",
-    opacity: 0.7,
-  },
-};
-
-function badge(status) {
-  const base = {
-    fontSize: 11,
-    padding: "2px 8px",
-    borderRadius: 999,
-  };
-
-  return {
-    ...base,
-    background:
-      status === "assigned"
-        ? "#16a34a"
-        : status === "new"
-        ? "#2563eb"
-        : status === "billed"
-        ? "#f59e0b"
-        : "#374151",
-  };
 }

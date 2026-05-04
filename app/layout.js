@@ -10,21 +10,26 @@ export const metadata = {
   },
 
   description:
-    "Get exclusive roofing leads near you. RoofFlow delivers high-intent homeowners requesting roofing estimates directly into your pipeline — no cold leads or wasted ad spend.",
+    "RoofFlow delivers exclusive, high-intent roofing leads directly to contractors. Stop cold calls and shared lists — get booked appointments from homeowners actively requesting roofing estimates.",
 
   keywords: [
-    "roofing leads near me",
+    "roofing leads",
     "exclusive roofing leads",
-    "roofing appointment service",
-    "roofing lead generation",
-    "contractor leads",
-    "roofing marketing system",
+    "roofing appointment booking",
+    "roofing lead generation system",
+    "contractor lead service",
+    "roofing marketing automation",
+    "booked roofing appointments",
   ],
 
+  authors: [{ name: "RoofFlow" }],
+
+  creator: "RoofFlow",
+
   openGraph: {
-    title: "Exclusive Roofing Leads & Appointments | RoofFlow",
+    title: "RoofFlow | Exclusive Roofing Leads & Booked Appointments",
     description:
-      "Stop chasing leads. Get pre-qualified homeowners requesting roofing estimates in your area.",
+      "Get pre-qualified homeowners requesting roofing estimates delivered directly to your pipeline.",
     url: "https://yourdomain.com",
     siteName: "RoofFlow",
     type: "website",
@@ -32,9 +37,14 @@ export const metadata = {
 
   twitter: {
     card: "summary_large_image",
-    title: "RoofFlow | Roofing Leads & Appointments",
+    title: "RoofFlow | Roofing Leads That Actually Convert",
     description:
-      "Exclusive roofing leads and booked appointments delivered on demand.",
+      "Exclusive roofing leads and booked appointments delivered automatically.",
+  },
+
+  robots: {
+    index: true,
+    follow: true,
   },
 
   alternates: {

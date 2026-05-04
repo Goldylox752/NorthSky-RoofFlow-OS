@@ -6,67 +6,42 @@ export async function POST(req) {
 
     if (!leadId || !contractorId) {
       return Response.json(
-        { success: false, error: "Missing leadId or contractorId" },
+        { error: "Missing data" },
         { status: 400 }
       );
     }
 
-    const now = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-
     // ===============================
-    // ATOMIC CLAIM (NO RACE CONDITIONS)
+    // ATOMIC CLAIM (RACE CONDITION SAFE)
     // ===============================
     const { data, error } = await supabase
       .from("leads")
       .update({
-        status: "locked",
+        status: "assigned",
         assigned_contractor_id: contractorId,
         lock_owner: contractorId,
-        locked_at: now,
-        lock_expires_at: expiresAt,
+        locked_at: new Date().toISOString(),
+        lock_expires_at: new Date(Date.now() + 5 * 60 * 1000),
       })
       .eq("id", leadId)
-
-      // only allow claim if:
-      // - new lead OR
-      // - lock expired
-      .or(`status.eq.new,lock_expires_at.lt.${now}`)
-
-      // prevents double ownership
-      .is("lock_owner", null)
-
+      .eq("status", "new") // prevents double claim
       .select()
       .single();
 
-    // ===============================
-    // FAILED CLAIM
-    // ===============================
     if (error || !data) {
       return Response.json(
-        {
-          success: false,
-          error: "Lead already claimed or unavailable",
-        },
+        { error: "Lead already claimed" },
         { status: 409 }
       );
     }
 
-    // ===============================
-    // SUCCESS
-    // ===============================
     return Response.json({
       success: true,
-      message: "Lead successfully claimed",
       lead: data,
     });
-
   } catch (err) {
     return Response.json(
-      {
-        success: false,
-        error: err.message,
-      },
+      { error: err.message },
       { status: 500 }
     );
   }

@@ -1,42 +1,79 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { rateLimit } from "@/lib/rateLimit";
 
 export async function POST(req) {
   try {
-    const ip =
-      req.headers.get("x-forwarded-for") || "unknown";
-
-    const limit = await rateLimit(ip);
-
-    if (!limit.success) {
-      return Response.json({ ok: false, error: "rate limited" }, { status: 429 });
-    }
-
     const body = await req.json().catch(() => null);
-    if (!body?.leadId) {
-      return Response.json({ ok: false, error: "missing leadId" }, { status: 400 });
+
+    const phone = body?.phone?.trim();
+
+    if (!phone) {
+      return Response.json(
+        { ok: false, error: "Missing phone" },
+        { status: 400 }
+      );
     }
 
-    // push to queue instead of processing immediately
-    const { error } = await supabaseAdmin
-      .from("lead_queue")
-      .insert({
-        lead_id: body.leadId,
-        status: "queued",
-      });
+    const leadData = {
+      phone,
+      name: body?.name || null,
+      city: body?.city || null,
+      source: body?.source || "scraper",
+      status: "active",
+      stage: "new",
+      created_at: new Date().toISOString(),
+    };
 
-    if (error) {
-      return Response.json({ ok: false, error: "queue failed" }, { status: 500 });
+    // =====================
+    // INSERT (RELY ON DB UNIQUE CONSTRAINT)
+    // =====================
+    const { data: lead, error: insertError } = await supabaseAdmin
+      .from("leads")
+      .insert([leadData])
+      .select()
+      .single();
+
+    if (insertError) {
+      // handle duplicate safely
+      if (insertError.code === "23505") {
+        return Response.json({
+          ok: true,
+          duplicate: true,
+        });
+      }
+
+      console.error("Insert error:", insertError);
+
+      return Response.json(
+        { ok: false, error: "Insert failed" },
+        { status: 500 }
+      );
+    }
+
+    // =====================
+    // QUEUE (NON-BLOCKING BUT LOGGED)
+    // =====================
+    const { error: queueError } = await supabaseAdmin
+      .from("lead_queue")
+      .insert([
+        {
+          lead_id: lead.id,
+          status: "queued",
+        },
+      ]);
+
+    if (queueError) {
+      console.error("Queue error:", queueError);
     }
 
     return Response.json({
       ok: true,
-      queued: true,
+      lead,
     });
-
   } catch (err) {
+    console.error("Ingest crash:", err);
+
     return Response.json(
-      { ok: false, error: "server error" },
+      { ok: false, error: "Server error" },
       { status: 500 }
     );
   }

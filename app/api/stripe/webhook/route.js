@@ -1,13 +1,25 @@
 import Stripe from "stripe";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+// ===============================
+// INIT STRIPE
+// ===============================
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: "2024-06-20",
+});
+
+// ===============================
+// SUPABASE (SERVICE ROLE REQUIRED)
+// ===============================
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 // ===============================
 // STRIPE WEBHOOK (PRODUCTION)
-// Handles subscriptions + checkout + activation
 // ===============================
 export async function POST(req) {
   try {
@@ -17,7 +29,7 @@ export async function POST(req) {
     let event;
 
     // ===============================
-    // VERIFY WEBHOOK SIGNATURE
+    // VERIFY SIGNATURE
     // ===============================
     try {
       event = stripe.webhooks.constructEvent(
@@ -26,20 +38,20 @@ export async function POST(req) {
         process.env.STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
-      console.error("❌ Stripe signature error:", err.message);
+      console.error("❌ Invalid Stripe signature:", err.message);
       return new Response(`Webhook Error: ${err.message}`, {
         status: 400,
       });
     }
 
     // ===============================
-    // EVENT ROUTING
+    // ROUTE EVENTS
     // ===============================
     switch (event.type) {
 
-      // ===============================
-      // 1. CHECKOUT COMPLETED
-      // ===============================
+      // =========================================
+      // 1. CHECKOUT COMPLETED (CITY / PLAN PURCHASE)
+      // =========================================
       case "checkout.session.completed": {
         const session = event.data.object;
 
@@ -47,58 +59,91 @@ export async function POST(req) {
         const customerId = session.customer;
         const subscriptionId = session.subscription;
 
+        const city = session.metadata?.city || null;
+
         if (!email) {
           return Response.json(
-            { error: "Missing customer email" },
+            { error: "Missing email" },
             { status: 400 }
           );
         }
 
-        // UPSERT contractor subscription record
-        const { error } = await supabase
-          .from("contractors")
-          .upsert(
-            {
-              email,
-              stripe_customer_id: customerId,
-              stripe_subscription_id: subscriptionId,
-              plan: "pro",
-              active: true,
-            },
-            {
-              onConflict: "email",
-            }
-          );
+        // ===============================
+        // UPSERT CONTRACTOR
+        // ===============================
+        const { data: contractor, error: contractorError } =
+          await supabase
+            .from("contractors")
+            .upsert(
+              {
+                email,
+                stripe_customer_id: customerId,
+                stripe_subscription_id: subscriptionId,
+                plan: city ? "city_exclusive" : "pro",
+                active: true,
+                city: city || null,
+              },
+              { onConflict: "email" }
+            )
+            .select()
+            .single();
 
-        if (error) {
-          console.error("❌ Supabase error:", error.message);
+        if (contractorError) {
+          console.error("❌ Contractor upsert error:", contractorError.message);
+          break;
+        }
+
+        // ===============================
+        // CITY ASSIGNMENT LOGIC
+        // ===============================
+        if (city) {
+          const { data: cityRow } = await supabase
+            .from("cities")
+            .select("*")
+            .eq("city", city)
+            .single();
+
+          if (cityRow) {
+            const updated = [
+              ...(cityRow.active_contractors || []),
+              contractor.id,
+            ];
+
+            await supabase
+              .from("cities")
+              .update({
+                active_contractors: updated,
+                status:
+                  updated.length >= cityRow.max_contractors
+                    ? "sold"
+                    : "limited",
+              })
+              .eq("city", city);
+          }
         }
 
         break;
       }
 
-      // ===============================
+      // =========================================
       // 2. SUBSCRIPTION UPDATED
-      // ===============================
+      // =========================================
       case "customer.subscription.updated": {
         const sub = event.data.object;
-
-        const customerId = sub.customer;
-        const status = sub.status;
 
         await supabase
           .from("contractors")
           .update({
-            active: status === "active",
+            active: sub.status === "active",
           })
-          .eq("stripe_customer_id", customerId);
+          .eq("stripe_customer_id", sub.customer);
 
         break;
       }
 
-      // ===============================
-      // 3. SUBSCRIPTION DELETED
-      // ===============================
+      // =========================================
+      // 3. SUBSCRIPTION CANCELED
+      // =========================================
       case "customer.subscription.deleted": {
         const sub = event.data.object;
 
@@ -113,23 +158,23 @@ export async function POST(req) {
         break;
       }
 
+      // =========================================
+      // DEFAULT
+      // =========================================
       default:
-        console.log(`⚠️ Unhandled event type: ${event.type}`);
+        console.log("⚠️ Unhandled event:", event.type);
     }
 
     // ===============================
     // RESPONSE
     // ===============================
-    return new Response(
-      JSON.stringify({ received: true }),
-      { status: 200 }
-    );
+    return Response.json({ received: true });
 
   } catch (err) {
-    console.error("🔥 Webhook error:", err);
+    console.error("🔥 Webhook failure:", err.message);
 
-    return new Response(
-      JSON.stringify({ error: err.message }),
+    return Response.json(
+      { error: "Webhook failed" },
       { status: 500 }
     );
   }

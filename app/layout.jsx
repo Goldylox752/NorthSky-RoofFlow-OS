@@ -16,13 +16,15 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body style={styles.body}>
-        {/* NAVBAR */}
+        {/* ================= NAVBAR ================= */}
         <header style={styles.navbar}>
-          <div style={styles.logo}>RoofFlow</div>
+          <div style={styles.logo}>RoofFlow OS</div>
 
           <nav style={styles.nav}>
             {navItems.map((item) => {
-              const active = pathname === item.href;
+              const isActive =
+                pathname === item.href ||
+                (item.href !== "/" && pathname?.startsWith(item.href));
 
               return (
                 <Link
@@ -30,8 +32,8 @@ export default function RootLayout({ children }) {
                   href={item.href}
                   style={{
                     ...styles.link,
-                    opacity: active ? 1 : 0.7,
-                    borderBottom: active
+                    opacity: isActive ? 1 : 0.65,
+                    borderBottom: isActive
                       ? "2px solid #4da3ff"
                       : "2px solid transparent",
                   }}
@@ -43,19 +45,20 @@ export default function RootLayout({ children }) {
           </nav>
         </header>
 
-        {/* PAGE CONTENT */}
+        {/* ================= PAGE CONTENT ================= */}
         <main style={styles.main}>{children}</main>
       </body>
     </html>
   );
 }
 
+/* ================= STYLES ================= */
 const styles = {
   body: {
     margin: 0,
-    fontFamily: "system-ui",
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
     background: "#0b1220",
-    color: "white",
+    color: "#ffffff",
   },
 
   navbar: {
@@ -66,27 +69,31 @@ const styles = {
     borderBottom: "1px solid #1f2937",
     position: "sticky",
     top: 0,
-    background: "#0b1220",
+    background: "rgba(11, 18, 32, 0.9)",
+    backdropFilter: "blur(10px)",
     zIndex: 100,
   },
 
   logo: {
-    fontWeight: "bold",
+    fontWeight: 700,
     fontSize: "18px",
     color: "#4da3ff",
+    letterSpacing: "0.5px",
   },
 
   nav: {
     display: "flex",
     gap: "18px",
+    alignItems: "center",
   },
 
   link: {
-    color: "white",
+    color: "#ffffff",
     textDecoration: "none",
     fontSize: "14px",
     paddingBottom: "4px",
-    transition: "0.2s",
+    transition: "all 0.2s ease",
+    borderBottom: "2px solid transparent",
   },
 
   main: {

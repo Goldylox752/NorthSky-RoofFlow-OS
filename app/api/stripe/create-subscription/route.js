@@ -1,17 +1,46 @@
 import Stripe from "stripe";
+import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
 // ===============================
-// STRIPE INIT
+// INIT
 // ===============================
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2024-06-20",
 });
 
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// ===============================
+// CITY LOCK CHECK (PREVENT DUPLICATES)
+// ===============================
+async function isCityAvailable(city, planTier) {
+  const { data } = await supabase
+    .from("cities")
+    .select("*")
+    .eq("city", city)
+    .single();
+
+  if (!data) return true;
+
+  // 🏙 exclusivity rules
+  if (planTier === "exclusive" && data.active_contractors?.length >= 1) {
+    return false;
+  }
+
+  if (planTier === "priority" && data.active_contractors?.length >= 3) {
+    return false;
+  }
+
+  return true;
+}
+
 // ===============================
 // CREATE CHECKOUT SESSION
-// SaaS + Marketplace + City Ownership Layer
 // ===============================
 export async function POST(req) {
   try {
@@ -19,11 +48,11 @@ export async function POST(req) {
 
     const {
       priceId,
-      mode = "payment", // payment | subscription
+      mode = "payment",
       email,
       city,
       contractorId,
-      planTier,
+      planTier = "basic",
       metadata = {},
     } = body;
 
@@ -37,21 +66,45 @@ export async function POST(req) {
       );
     }
 
-    if (!process.env.NEXT_PUBLIC_URL) {
+    if (!city) {
       return Response.json(
-        { success: false, error: "Missing NEXT_PUBLIC_URL" },
-        { status: 500 }
+        { success: false, error: "Missing city" },
+        { status: 400 }
       );
     }
 
     // ===============================
-    // STRIPE SESSION BUILD
+    // CITY AVAILABILITY CHECK
+    // ===============================
+    const available = await isCityAvailable(city, planTier);
+
+    if (!available) {
+      return Response.json(
+        {
+          success: false,
+          error: "City tier already sold or full",
+        },
+        { status: 409 }
+      );
+    }
+
+    // ===============================
+    // RESERVE CITY (TEMP LOCK BEFORE PAYMENT)
+    // ===============================
+    await supabase.from("city_intents").insert({
+      city,
+      planTier,
+      contractorId,
+      status: "pending_payment",
+      created_at: new Date().toISOString(),
+    });
+
+    // ===============================
+    // STRIPE SESSION
     // ===============================
     const session = await stripe.checkout.sessions.create({
       mode,
-
       payment_method_types: ["card"],
-
       customer_email: email || undefined,
 
       line_items: [
@@ -61,32 +114,19 @@ export async function POST(req) {
         },
       ],
 
-      // ===============================
-      // REDIRECT FLOW
-      // ===============================
       success_url: `${process.env.NEXT_PUBLIC_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_URL}/cancel`,
 
       // ===============================
-      // MARKETPLACE / ROUTING CONTEXT
+      // MARKETPLACE CONTEXT (SOURCE OF TRUTH TAGGING)
       // ===============================
       metadata: {
-        source: "roofflow",
-        system: "lead_marketplace",
-
-        // 🏙 city ownership layer
-        city: city || "unknown",
-
-        // 🧑‍💼 contractor assignment (future-proof)
+        system: "roofflow_marketplace",
+        city,
+        planTier,
         contractorId: contractorId || null,
-
-        // 💎 tier system (basic | priority | exclusive)
-        planTier: planTier || "basic",
-
-        // 💰 billing mode
         mode,
-
-        // original metadata passthrough
+        intent: "city_purchase",
         ...metadata,
       },
     });

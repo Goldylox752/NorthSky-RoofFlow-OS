@@ -1,28 +1,51 @@
-import mongoose from "mongoose";
+"use client";
 
-const ContractorSchema = new mongoose.Schema({
-  name: String,
-  phone: String,
-  email: String,
+import { useEffect, useState } from "react";
 
-  city: String,
+export default function ContractorDashboard() {
+  const [leads, setLeads] = useState([]);
+  const contractorId = "demo-contractor-1"; // replace with auth later
 
-  active: {
-    type: Boolean,
-    default: true,
-  },
+  useEffect(() => {
+    fetch(`/api/leads?contractorId=${contractorId}`)
+      .then((r) => r.json())
+      .then((d) => setLeads(d.leads || []));
+  }, []);
 
-  plan: {
-    type: String,
-    enum: ["free", "paid", "premium"],
-    default: "free",
-  },
+  const claimLead = async (leadId) => {
+    await fetch("/api/lead/claim", {
+      method: "POST",
+      body: JSON.stringify({ leadId, contractorId }),
+    });
 
-  leadsReceived: {
-    type: Number,
-    default: 0,
-  },
-});
+    setLeads((prev) =>
+      prev.map((l) =>
+        l.id === leadId ? { ...l, status: "claimed" } : l
+      )
+    );
+  };
 
-export default mongoose.models.Contractor ||
-  mongoose.model("Contractor", ContractorSchema);
+  return (
+    <div style={{ padding: 40, color: "white", background: "#0b1220" }}>
+      <h1>Contractor Portal</h1>
+
+      {leads.map((l) => (
+        <div key={l.id} style={card}>
+          <p>📍 {l.city}</p>
+          <p>⚡ Score: {l.score}</p>
+          <p>💰 ${l.price / 100}</p>
+
+          <button onClick={() => claimLead(l.id)}>
+            Claim Lead
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const card = {
+  background: "#111827",
+  padding: 12,
+  marginTop: 10,
+};

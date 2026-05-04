@@ -2,117 +2,142 @@
 
 import { useEffect, useState } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
 export default function AdminDashboard() {
+  const [cities, setCities] = useState([]);
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  async function fetchLeads() {
-    try {
-      const res = await fetch(`${API_URL}/api/leads`);
-      const data = await res.json();
+  const API = process.env.NEXT_PUBLIC_API_URL;
 
-      setLeads(data.leads || []);
-    } catch (err) {
-      console.error("Admin fetch error:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // ===============================
+  // LOAD DATA
+  // ===============================
   useEffect(() => {
-    fetchLeads();
+    async function load() {
+      try {
+        const [cityRes, leadRes] = await Promise.all([
+          fetch(`${API}/api/admin/cities`),
+          fetch(`${API}/api/admin/leads`),
+        ]);
+
+        const citiesData = await cityRes.json();
+        const leadsData = await leadRes.json();
+
+        setCities(citiesData?.cities || []);
+        setLeads(leadsData?.leads || []);
+      } catch (err) {
+        console.error("Admin load error:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
   }, []);
 
-  const totalRevenue = leads.reduce((sum, l) => sum + (l.price || 0), 0);
+  if (loading) {
+    return <div style={styles.loading}>Loading Admin Panel...</div>;
+  }
 
   return (
     <main style={styles.page}>
-      <h1 style={styles.h1}>Admin Control Panel</h1>
+      <h1 style={styles.title}>🏙 RoofFlow Admin Dashboard</h1>
 
-      {/* STATS BAR */}
-      <div style={styles.stats}>
-        <div style={styles.card}>
-          <p>Total Leads</p>
-          <h2>{leads.length}</h2>
-        </div>
+      {/* =======================
+          CITY MARKETPLACE
+      ======================= */}
+      <section style={styles.section}>
+        <h2>City Marketplace</h2>
 
-        <div style={styles.card}>
-          <p>Total Revenue</p>
-          <h2>${(totalRevenue / 100).toFixed(2)}</h2>
-        </div>
-      </div>
+        <div style={styles.grid}>
+          {cities.map((c) => (
+            <div key={c.city} style={card}>
+              <h3>{c.city.toUpperCase()}</h3>
 
-      {/* LEADS TABLE */}
-      <div style={styles.table}>
-        <h3>Live Leads</h3>
+              <p>Tier: {c.tier}</p>
+              <p>
+                Contractors: {c.active_contractors?.length || 0} /{" "}
+                {c.max_contractors}
+              </p>
 
-        {loading ? (
-          <p>Loading...</p>
-        ) : (
-          leads.map((lead) => (
-            <div key={lead.id} style={styles.row}>
-              <div>
-                <b>{lead.city}</b>
-                <p style={{ fontSize: 12, opacity: 0.7 }}>
-                  {lead.status}
-                </p>
-              </div>
+              <p>Status: {c.status || "active"}</p>
 
-              <div>${(lead.price || 0) / 100}</div>
-
-              <div>
-                {lead.assigned_contractor_id || "Unassigned"}
-              </div>
+              <button style={button}>
+                Manage City
+              </button>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      </section>
+
+      {/* =======================
+          LIVE LEADS
+      ======================= */}
+      <section style={styles.section}>
+        <h2>Live Leads</h2>
+
+        <div style={styles.grid}>
+          {leads.map((l) => (
+            <div key={l.id} style={card}>
+              <p>📍 {l.city}</p>
+              <p>⚡ Status: {l.status}</p>
+              <p>💰 Score: {l.score}</p>
+              <p>🧠 Assigned: {l.assigned_contractor_id || "none"}</p>
+              <p>💵 Price: ${(l.price || 0) / 100}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }
 
-// =====================
+// ===============================
 // STYLES
-// =====================
+// ===============================
 const styles = {
   page: {
-    padding: 40,
     background: "#0b1220",
-    color: "white",
     minHeight: "100vh",
-    fontFamily: "system-ui",
+    color: "white",
+    padding: 30,
   },
 
-  h1: {
-    fontSize: 32,
+  title: {
+    fontSize: 28,
     marginBottom: 20,
   },
 
-  stats: {
-    display: "flex",
-    gap: 20,
-    marginBottom: 30,
+  section: {
+    marginTop: 30,
   },
 
-  card: {
-    background: "#111827",
-    padding: 20,
-    borderRadius: 12,
-    flex: 1,
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
+    gap: 12,
   },
 
-  table: {
-    background: "#111827",
-    padding: 20,
-    borderRadius: 12,
+  loading: {
+    padding: 40,
+    color: "white",
+    background: "#0b1220",
   },
+};
 
-  row: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "10px 0",
-    borderBottom: "1px solid #1f2937",
-  },
+const card = {
+  background: "#111827",
+  padding: 14,
+  borderRadius: 10,
+  border: "1px solid #1f2937",
+};
+
+const button = {
+  marginTop: 10,
+  padding: "8px 12px",
+  background: "#3b82f6",
+  border: "none",
+  borderRadius: 6,
+  color: "white",
+  cursor: "pointer",
 };

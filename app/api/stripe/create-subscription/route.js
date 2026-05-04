@@ -2,31 +2,33 @@ import Stripe from "stripe";
 
 export const runtime = "nodejs";
 
-// =====================
-// STRIPE INIT (SAFE)
-// =====================
+// ===============================
+// STRIPE INIT
+// ===============================
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2024-06-20",
 });
 
-// =====================
+// ===============================
 // CREATE CHECKOUT SESSION
-// SaaS: subscriptions + pay-per-lead support
-// =====================
+// Supports:
+// - subscriptions (monthly SaaS)
+// - one-time payments (city access / leads)
+// ===============================
 export async function POST(req) {
   try {
     const body = await req.json();
 
     const {
       priceId,
-      mode = "payment", // "payment" | "subscription"
+      mode = "payment",
       email,
       metadata = {},
     } = body;
 
-    // =====================
+    // ===============================
     // VALIDATION
-    // =====================
+    // ===============================
     if (!priceId) {
       return Response.json(
         { success: false, error: "Missing priceId" },
@@ -41,11 +43,11 @@ export async function POST(req) {
       );
     }
 
-    // =====================
-    // CREATE CHECKOUT SESSION
-    // =====================
+    // ===============================
+    // STRIPE SESSION
+    // ===============================
     const session = await stripe.checkout.sessions.create({
-      mode,
+      mode, // "payment" | "subscription"
 
       payment_method_types: ["card"],
 
@@ -58,17 +60,19 @@ export async function POST(req) {
         },
       ],
 
-      // =====================
+      // ===============================
       // REDIRECTS
-      // =====================
+      // ===============================
       success_url: `${process.env.NEXT_PUBLIC_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_URL}/cancel`,
 
-      // =====================
-      // SAAS TRACKING LAYER
-      // =====================
+      // ===============================
+      // SAAS + MARKETPLACE CONTEXT
+      // ===============================
       metadata: {
         source: "roofflow",
+        mode,
+        email,
         ...metadata,
       },
     });
@@ -79,7 +83,7 @@ export async function POST(req) {
     });
 
   } catch (err) {
-    console.error("🔥 Stripe checkout error:", err);
+    console.error("🔥 Stripe checkout error:", err.message);
 
     return Response.json(
       {

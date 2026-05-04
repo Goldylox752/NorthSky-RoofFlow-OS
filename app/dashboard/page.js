@@ -2,153 +2,114 @@
 
 import { useEffect, useState } from "react";
 
-export default function Dashboard() {
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+export default function ContractorDashboard() {
   const [leads, setLeads] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
-  const fetchLeads = async () => {
-    setError("");
-
+  async function fetchLeads() {
     try {
-      setLoading(true);
-
-      const res = await fetch("/api/leads", {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
+      const res = await fetch(`${API_URL}/api/leads?status=assigned`);
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to fetch leads");
-      }
-
-      setLeads(Array.isArray(data) ? data : []);
+      setLeads(data.leads || []);
     } catch (err) {
-      setError(err.message || "Unable to load leads. Please try again.");
-      setLeads([]);
-    } finally {
-      setLoading(false);
+      console.error(err);
     }
-  };
+  }
 
   useEffect(() => {
     fetchLeads();
   }, []);
 
+  const revenue = leads.reduce((sum, l) => sum + (l.price || 0), 0);
+
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>RoofFlow Dashboard</h1>
+    <main style={styles.page}>
+      <h1 style={styles.h1}>Contractor Dashboard</h1>
 
-      <p style={styles.subtext}>Real-time lead pipeline overview</p>
+      {/* KPI */}
+      <div style={styles.kpi}>
+        <div style={styles.card}>
+          <p>Assigned Leads</p>
+          <h2>{leads.length}</h2>
+        </div>
 
-      <div style={styles.headerRow}>
-        <h3 style={styles.sectionTitle}>Active Leads</h3>
-
-        <button
-          onClick={fetchLeads}
-          style={styles.refreshBtn}
-          disabled={loading}
-        >
-          {loading ? "Refreshing..." : "Refresh"}
-        </button>
+        <div style={styles.card}>
+          <p>Revenue Pipeline</p>
+          <h2>${(revenue / 100).toFixed(2)}</h2>
+        </div>
       </div>
 
-      {/* LOADING STATE */}
-      {loading && <p style={styles.text}>Loading leads...</p>}
-
-      {/* ERROR STATE */}
-      {error && <p style={styles.error}>{error}</p>}
-
-      {/* EMPTY STATE */}
-      {!loading && leads.length === 0 && !error && (
-        <p style={styles.text}>No leads yet.</p>
-      )}
-
-      {/* LEADS LIST */}
+      {/* LEADS */}
       <div style={styles.list}>
-        {leads.map((l) => (
-          <div key={l.id} style={styles.card}>
-            <b>{l.email || "No email"}</b>
+        <h3>Your Leads</h3>
 
-            <p style={styles.meta}>
-              Status: {l.status || "unknown"} | Stage: {l.stage || "new"}
-            </p>
+        {leads.map((lead) => (
+          <div key={lead.id} style={styles.item}>
+            <div>
+              <b>{lead.city}</b>
+              <p style={{ fontSize: 12, opacity: 0.7 }}>
+                Score: {lead.score || 0}
+              </p>
+            </div>
+
+            <div>${(lead.price || 0) / 100}</div>
+
+            <button style={styles.button}>Contact</button>
           </div>
         ))}
       </div>
-    </div>
+    </main>
   );
 }
 
+// =====================
 const styles = {
-  container: {
+  page: {
     padding: 40,
-    fontFamily: "Arial",
     background: "#0b1220",
-    minHeight: "100vh",
     color: "white",
+    minHeight: "100vh",
   },
 
-  title: {
-    fontSize: 28,
-    marginBottom: 5,
-  },
-
-  subtext: {
-    fontSize: 13,
-    opacity: 0.7,
+  h1: {
+    fontSize: 30,
     marginBottom: 20,
   },
 
-  headerRow: {
+  kpi: {
     display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  sectionTitle: {
-    marginTop: 20,
-    marginBottom: 10,
-  },
-
-  refreshBtn: {
-    padding: "6px 10px",
-    borderRadius: 6,
-    border: "1px solid #333",
-    background: "#111827",
-    color: "white",
-    cursor: "pointer",
-    fontSize: 12,
-  },
-
-  text: {
-    opacity: 0.7,
-  },
-
-  error: {
-    color: "#ff6b6b",
-    marginBottom: 10,
-  },
-
-  list: {
-    marginTop: 10,
+    gap: 20,
+    marginBottom: 30,
   },
 
   card: {
     background: "#111827",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 10,
-    border: "1px solid #1f2937",
+    padding: 20,
+    borderRadius: 12,
+    flex: 1,
   },
 
-  meta: {
-    fontSize: 12,
-    opacity: 0.7,
-    marginTop: 5,
+  list: {
+    background: "#111827",
+    padding: 20,
+    borderRadius: 12,
+  },
+
+  item: {
+    display: "flex",
+    justifyContent: "space-between",
+    padding: "10px 0",
+    borderBottom: "1px solid #1f2937",
+  },
+
+  button: {
+    background: "#4da3ff",
+    border: "none",
+    padding: "6px 12px",
+    borderRadius: 6,
+    color: "white",
+    cursor: "pointer",
   },
 };

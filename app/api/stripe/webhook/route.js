@@ -4,22 +4,39 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 
 // ===============================
-// INIT STRIPE
+// INIT
 // ===============================
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2024-06-20",
 });
 
-// ===============================
-// SUPABASE (SERVICE ROLE REQUIRED)
-// ===============================
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 // ===============================
-// STRIPE WEBHOOK (PRODUCTION)
+// IDEMPOTENCY GUARD (PREVENT DOUBLE PROCESSING)
+// ===============================
+async function alreadyProcessed(eventId) {
+  const { data } = await supabase
+    .from("stripe_events")
+    .select("id")
+    .eq("id", eventId)
+    .single();
+
+  return !!data;
+}
+
+async function markProcessed(eventId) {
+  await supabase.from("stripe_events").insert({
+    id: eventId,
+    processed_at: new Date().toISOString(),
+  });
+}
+
+// ===============================
+// WEBHOOK
 // ===============================
 export async function POST(req) {
   try {
@@ -29,7 +46,7 @@ export async function POST(req) {
     let event;
 
     // ===============================
-    // VERIFY SIGNATURE
+    // VERIFY STRIPE SIGNATURE
     // ===============================
     try {
       event = stripe.webhooks.constructEvent(
@@ -38,63 +55,58 @@ export async function POST(req) {
         process.env.STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
-      console.error("❌ Invalid Stripe signature:", err.message);
-      return new Response(`Webhook Error: ${err.message}`, {
-        status: 400,
-      });
+      console.error("❌ Stripe signature error:", err.message);
+      return new Response("Invalid signature", { status: 400 });
     }
 
     // ===============================
-    // ROUTE EVENTS
+    // IDEMPOTENCY CHECK
+    // ===============================
+    if (await alreadyProcessed(event.id)) {
+      return Response.json({ received: true, duplicate: true });
+    }
+
+    // ===============================
+    // ROUTER
     // ===============================
     switch (event.type) {
 
-      // =========================================
-      // 1. CHECKOUT COMPLETED (CITY / PLAN PURCHASE)
-      // =========================================
+      // =====================================================
+      // 🏙 CITY PURCHASE / CONTRACTOR ACTIVATION
+      // =====================================================
       case "checkout.session.completed": {
         const session = event.data.object;
 
         const email = session.customer_details?.email;
         const customerId = session.customer;
         const subscriptionId = session.subscription;
+        const city = session.metadata?.city;
 
-        const city = session.metadata?.city || null;
-
-        if (!email) {
-          return Response.json(
-            { error: "Missing email" },
-            { status: 400 }
-          );
-        }
+        if (!email) break;
 
         // ===============================
         // UPSERT CONTRACTOR
         // ===============================
-        const { data: contractor, error: contractorError } =
-          await supabase
-            .from("contractors")
-            .upsert(
-              {
-                email,
-                stripe_customer_id: customerId,
-                stripe_subscription_id: subscriptionId,
-                plan: city ? "city_exclusive" : "pro",
-                active: true,
-                city: city || null,
-              },
-              { onConflict: "email" }
-            )
-            .select()
-            .single();
+        const { data: contractor } = await supabase
+          .from("contractors")
+          .upsert(
+            {
+              email,
+              stripe_customer_id: customerId,
+              stripe_subscription_id: subscriptionId,
+              active: true,
+              plan: city ? "city_owner" : "pro",
+              city: city || null,
+            },
+            { onConflict: "email" }
+          )
+          .select()
+          .single();
 
-        if (contractorError) {
-          console.error("❌ Contractor upsert error:", contractorError.message);
-          break;
-        }
+        if (!contractor) break;
 
         // ===============================
-        // CITY ASSIGNMENT LOGIC
+        // CITY OWNERSHIP ENFORCEMENT (NO DUPLICATES)
         // ===============================
         if (city) {
           const { data: cityRow } = await supabase
@@ -104,30 +116,44 @@ export async function POST(req) {
             .single();
 
           if (cityRow) {
-            const updated = [
-              ...(cityRow.active_contractors || []),
-              contractor.id,
-            ];
+            const existing = cityRow.active_contractors || [];
 
-            await supabase
-              .from("cities")
-              .update({
-                active_contractors: updated,
-                status:
-                  updated.length >= cityRow.max_contractors
-                    ? "sold"
-                    : "limited",
-              })
-              .eq("city", city);
+            if (!existing.includes(contractor.id)) {
+              const updated = [...existing, contractor.id];
+
+              await supabase
+                .from("cities")
+                .update({
+                  active_contractors: updated,
+
+                  // 🔒 enforce exclusivity state machine
+                  status:
+                    updated.length >= cityRow.max_contractors
+                      ? "sold"
+                      : "active",
+                })
+                .eq("city", city);
+            }
           }
+
+          // ===============================
+          // CLEAN INTENT TABLE (FINALIZE PURCHASE)
+          // ===============================
+          await supabase
+            .from("city_intents")
+            .update({
+              status: "confirmed",
+            })
+            .eq("city", city)
+            .eq("contractorId", contractor.id);
         }
 
         break;
       }
 
-      // =========================================
-      // 2. SUBSCRIPTION UPDATED
-      // =========================================
+      // =====================================================
+      // 🔄 SUBSCRIPTION ACTIVATION
+      // =====================================================
       case "customer.subscription.updated": {
         const sub = event.data.object;
 
@@ -141,9 +167,9 @@ export async function POST(req) {
         break;
       }
 
-      // =========================================
-      // 3. SUBSCRIPTION CANCELED
-      // =========================================
+      // =====================================================
+      // ❌ SUBSCRIPTION CANCELED
+      // =====================================================
       case "customer.subscription.deleted": {
         const sub = event.data.object;
 
@@ -158,20 +184,19 @@ export async function POST(req) {
         break;
       }
 
-      // =========================================
-      // DEFAULT
-      // =========================================
       default:
         console.log("⚠️ Unhandled event:", event.type);
     }
 
     // ===============================
-    // RESPONSE
+    // MARK EVENT PROCESSED
     // ===============================
+    await markProcessed(event.id);
+
     return Response.json({ received: true });
 
   } catch (err) {
-    console.error("🔥 Webhook failure:", err.message);
+    console.error("🔥 Webhook crash:", err.message);
 
     return Response.json(
       { error: "Webhook failed" },

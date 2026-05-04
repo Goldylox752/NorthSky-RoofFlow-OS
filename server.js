@@ -29,7 +29,7 @@ const fetchFn =
 const app = express();
 
 // =====================
-// ENV VARS
+// ENV
 // =====================
 const {
   TWILIO_SID,
@@ -42,7 +42,7 @@ const {
 } = process.env;
 
 // =====================
-// DEBUG (safe)
+// DEBUG
 // =====================
 console.log("ENV STATUS:", {
   TWILIO: !!(TWILIO_SID && TWILIO_AUTH_TOKEN),
@@ -52,7 +52,7 @@ console.log("ENV STATUS:", {
 });
 
 // =====================
-// CLIENTS (safe init)
+// CLIENTS
 // =====================
 const twilioClient =
   TWILIO_SID && TWILIO_AUTH_TOKEN
@@ -60,32 +60,73 @@ const twilioClient =
     : null;
 
 const stripe = STRIPE_SECRET_KEY
-  ? new Stripe(STRIPE_SECRET_KEY, {
-      apiVersion: "2024-06-20",
-    })
+  ? new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" })
   : null;
 
 // =====================
 // MIDDLEWARE
 // =====================
 app.use(express.json());
-
-app.use(
-  cors({
-    origin: FRONTEND_URL || "*",
-    methods: ["GET", "POST"],
-  })
-);
+app.use(cors({ origin: FRONTEND_URL || "*", methods: ["GET", "POST"] }));
 
 // =====================
 // HEALTH CHECK
 // =====================
 app.get("/", (_, res) => {
-  res.status(200).send("🚀 RoofFlow API LIVE");
+  res.status(200).send("🚀 RoofFlow SaaS API LIVE");
 });
 
+// ======================================================
+// 💰 MONETIZATION CONFIG
+// ======================================================
+
+// Lead pricing ($15–$50)
+const LEAD_PRICING = {
+  low: 1500,
+  mid: 3000,
+  high: 5000,
+};
+
+// Subscription tiers ($99–$499)
+const SUBSCRIPTIONS = {
+  starter: 9900,
+  growth: 19900,
+  elite: 49900,
+};
+
+// City exclusivity multiplier
+const CITY_TIERS = {
+  basic: 1,
+  priority: 1.5,
+  exclusive: 3,
+};
+
 // =====================
-// FALLBACK AI RESPONSE
+// LEAD VALUE ENGINE
+// =====================
+function calculateLeadPrice(score = 5, cityTier = "basic") {
+  let base;
+
+  if (score >= 8) base = LEAD_PRICING.high;
+  else if (score >= 6) base = LEAD_PRICING.mid;
+  else base = LEAD_PRICING.low;
+
+  const multiplier = CITY_TIERS[cityTier] || 1;
+
+  return Math.round(base * multiplier);
+}
+
+// =====================
+// CONTRACTOR TIER ENGINE
+// =====================
+function getContractorTier(plan) {
+  if (plan === "elite") return 3;
+  if (plan === "growth") return 2;
+  return 1;
+}
+
+// =====================
+// AI FALLBACK
 // =====================
 const FALLBACK_REPLY =
   "Are you available this week for a quick roof inspection?";
@@ -111,24 +152,12 @@ async function askOllama(prompt) {
       }),
     });
 
-    if (!res.ok) return FALLBACK_REPLY;
-
     const data = await res.json();
     return data?.message?.content || FALLBACK_REPLY;
-  } catch (err) {
-    console.error("Ollama error:", err.message);
+  } catch {
     return FALLBACK_REPLY;
   }
 }
-
-// =====================
-// PRICING
-// =====================
-const PLANS = {
-  starter: 49900,
-  growth: 99900,
-  domination: 199900,
-};
 
 // =====================
 // DRIP SYSTEM
@@ -136,9 +165,9 @@ const PLANS = {
 function dripSequence() {
   return [
     { delay: 0, text: "Thanks — we received your request." },
-    { delay: 3600000, text: "Limited contractor slots in your area." },
-    { delay: 86400000, text: "Still interested in exclusive roofing leads?" },
-    { delay: 172800000, text: "Final reminder — spots are nearly full." },
+    { delay: 3600000, text: "Limited contractor availability in your area." },
+    { delay: 86400000, text: "Still interested in roofing estimates?" },
+    { delay: 172800000, text: "Final reminder — slots are closing." },
   ];
 }
 
@@ -161,19 +190,25 @@ function sendDrip(phone, messages) {
 }
 
 // =====================
-// LEAD CAPTURE
+// LEAD CAPTURE (MONETIZED READY)
 // =====================
 app.post("/api/lead", async (req, res) => {
   try {
-    const { phone } = req.body || {};
+    const { phone, score = 5, cityTier = "basic" } = req.body || {};
 
     if (!phone) {
       return res.status(400).json({ error: "Missing phone" });
     }
 
+    // 💰 CALCULATE LEAD VALUE
+    const leadValue = calculateLeadPrice(score, cityTier);
+
+    console.log("💰 Lead Value:", leadValue);
+
+    // SMS confirmation
     if (twilioClient) {
       await twilioClient.messages.create({
-        body: "Thanks — we’ll follow up shortly.",
+        body: `Thanks — your request is received. Estimated value: $${leadValue / 100}`,
         from: TWILIO_PHONE,
         to: phone,
       });
@@ -181,7 +216,10 @@ app.post("/api/lead", async (req, res) => {
 
     sendDrip(phone, dripSequence());
 
-    return res.json({ success: true });
+    return res.json({
+      success: true,
+      leadValue,
+    });
   } catch (err) {
     console.error("Lead error:", err.message);
     return res.status(500).json({ error: "Lead error" });
@@ -189,7 +227,7 @@ app.post("/api/lead", async (req, res) => {
 });
 
 // =====================
-// CHECKOUT
+// STRIPE CHECKOUT (SUBSCRIPTIONS)
 // =====================
 app.post("/api/checkout", async (req, res) => {
   try {
@@ -198,8 +236,9 @@ app.post("/api/checkout", async (req, res) => {
     }
 
     const { plan, email, phone } = req.body || {};
+    const amount = SUBSCRIPTIONS[plan];
 
-    if (!plan || !PLANS[plan]) {
+    if (!amount) {
       return res.status(400).json({ error: "Invalid plan" });
     }
 
@@ -213,9 +252,10 @@ app.post("/api/checkout", async (req, res) => {
           price_data: {
             currency: "usd",
             product_data: {
-              name: `RoofFlow AI - ${plan}`,
+              name: `RoofFlow ${plan.toUpperCase()} Plan`,
+              description: "Access exclusive roofing leads & territory system",
             },
-            unit_amount: PLANS[plan],
+            unit_amount: amount,
           },
           quantity: 1,
         },
@@ -224,7 +264,11 @@ app.post("/api/checkout", async (req, res) => {
       success_url: `${FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${FRONTEND_URL}/cancel`,
 
-      metadata: { email, phone, plan },
+      metadata: {
+        email,
+        phone,
+        plan,
+      },
     });
 
     return res.json({ url: session.url });
@@ -235,7 +279,7 @@ app.post("/api/checkout", async (req, res) => {
 });
 
 // =====================
-// SMS WEBHOOK
+// SMS AI WEBHOOK
 // =====================
 app.post("/sms", async (req, res) => {
   try {
@@ -267,7 +311,7 @@ app.post("/sms", async (req, res) => {
 const serverPort = PORT || 3000;
 
 app.listen(serverPort, () => {
-  console.log(`🚀 Server running on port ${serverPort}`);
+  console.log(`🚀 RoofFlow SaaS running on port ${serverPort}`);
 });
 
 module.exports = app;

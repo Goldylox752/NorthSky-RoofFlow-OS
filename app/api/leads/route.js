@@ -3,15 +3,15 @@ import { supabase } from "@/lib/supabase";
 export const runtime = "nodejs";
 
 // ===============================
-// GET LEADS (ADMIN + CONTRACTOR + SAAS)
-// Pagination + filters + scoring + routing support
+// LEADS API (SAAS CORE ENGINE)
+// role-aware + routing-safe + scalable
 // ===============================
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
 
     // ===============================
-    // SAFE PAGINATION
+    // PAGINATION (SAFE DEFAULTS)
     // ===============================
     const page = Math.max(parseInt(searchParams.get("page") || "1"), 1);
 
@@ -24,7 +24,7 @@ export async function GET(req) {
     const to = from + limit - 1;
 
     // ===============================
-    // FILTERS (SaaS LAYER)
+    // FILTERS
     // ===============================
     const status = searchParams.get("status");
     const city = searchParams.get("city");
@@ -32,21 +32,56 @@ export async function GET(req) {
     const contractorId = searchParams.get("contractorId");
 
     // ===============================
+    // ROLE (CRITICAL SAAS LAYER)
+    // ===============================
+    const role = searchParams.get("role"); 
+    // admin | contractor
+
+    // ===============================
     // BASE QUERY
     // ===============================
     let query = supabase
       .from("leads")
-      .select("*", { count: "exact" })
+      .select(
+        `
+        id,
+        email,
+        phone,
+        name,
+        city,
+        status,
+        score,
+        price,
+        billed,
+        created_at,
+        assigned_contractor_id,
+        locked_at,
+        lock_owner,
+        lock_expires_at
+      `,
+        { count: "exact" }
+      )
       .order("created_at", { ascending: false })
       .range(from, to);
 
     // ===============================
-    // DYNAMIC FILTERS
+    // ROLE-BASED DATA PROTECTION
+    // ===============================
+    if (role === "contractor" && contractorId) {
+      query = query.eq("assigned_contractor_id", contractorId);
+    }
+
+    // admin sees everything (no restriction)
+
+    // ===============================
+    // FILTERS
     // ===============================
     if (status) query = query.eq("status", status);
     if (city) query = query.eq("city", city);
-    if (contractorId)
+
+    if (contractorId && role === "admin") {
       query = query.eq("assigned_contractor_id", contractorId);
+    }
 
     if (minScore) {
       const score = parseInt(minScore);
@@ -56,7 +91,7 @@ export async function GET(req) {
     }
 
     // ===============================
-    // EXECUTE QUERY
+    // EXECUTE
     // ===============================
     const { data, error, count } = await query;
 
@@ -64,10 +99,7 @@ export async function GET(req) {
       console.error("❌ Supabase error:", error.message);
 
       return Response.json(
-        {
-          success: false,
-          error: error.message,
-        },
+        { success: false, error: error.message },
         { status: 500 }
       );
     }
@@ -75,16 +107,26 @@ export async function GET(req) {
     const total = count ?? 0;
 
     // ===============================
-    // RESPONSE (SAAS STRUCTURE)
+    // SaaS METRICS LAYER (IMPORTANT)
+    // ===============================
+    const metrics = {
+      total,
+      returned: data?.length ?? 0,
+      avgScore:
+        data?.length > 0
+          ? (
+              data.reduce((acc, l) => acc + (l.score || 0), 0) /
+              data.length
+            ).toFixed(2)
+          : 0,
+    };
+
+    // ===============================
+    // RESPONSE
     // ===============================
     return Response.json({
       success: true,
       leads: data ?? [],
-
-      stats: {
-        total,
-        returned: data?.length ?? 0,
-      },
 
       pagination: {
         page,
@@ -93,15 +135,14 @@ export async function GET(req) {
         pages: Math.ceil(total / limit),
         hasMore: from + limit < total,
       },
+
+      metrics,
     });
   } catch (err) {
     console.error("🔥 Leads API crash:", err);
 
     return Response.json(
-      {
-        success: false,
-        error: "Unexpected server error",
-      },
+      { success: false, error: "Server error" },
       { status: 500 }
     );
   }

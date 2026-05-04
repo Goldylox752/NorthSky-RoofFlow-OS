@@ -1,4 +1,5 @@
 import Script from "next/script";
+import "./globals.css";
 
 export const metadata = {
   metadataBase: new URL("https://yourdomain.com"),
@@ -38,74 +39,5 @@ export const metadata = {
 
   alternates: {
     canonical: "https://yourdomain.com",
-  },
-};
-
-export default function RootLayout({ children }) {
-  return (
-    <html lang="en">
-      <head>
-        {/* ✅ Google Tag Manager */}
-        <Script id="gtm-script" strategy="afterInteractive">
-          {`
-            (function(w,d,s,l,i){
-              w[l]=w[l]||[];
-              w[l].push({'gtm.start': new Date().getTime(), event:'gtm.js'});
-              var f=d.getElementsByTagName(s)[0],
-              j=d.createElement(s),
-              dl=l!='dataLayer'?'&l='+l:'';
-              j.async=true;
-              j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;
-              f.parentNode.insertBefore(j,f);
-            })(window,document,'script','dataLayer','GTM-WQ67Z3XL');
-          `}
-        </Script>
-
-        {/* ✅ Structured Data (SEO boost) */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "Service",
-              name: "RoofFlow",
-              description:
-                "Exclusive roofing lead generation and appointment booking service",
-              areaServed: "North America",
-              provider: {
-                "@type": "Organization",
-                name: "RoofFlow",
-                url: "https://yourdomain.com",
-              },
-            }),
-          }}
-        />
-      </head>
-
-      <body style={styles.body}>
-        {/* ✅ GTM fallback */}
-        <noscript>
-          <iframe
-            src="https://www.googletagmanager.com/ns.html?id=GTM-WQ67Z3XL"
-            height="0"
-            width="0"
-            style={{ display: "none", visibility: "hidden" }}
-          />
-        </noscript>
-
-        {children}
-      </body>
-    </html>
-  );
-}
-
-const styles = {
-  body: {
-    margin: 0,
-    padding: 0,
-    background: "#0b1220",
-    color: "white",
-    fontFamily:
-      "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
   },
 };

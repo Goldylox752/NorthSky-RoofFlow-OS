@@ -4,34 +4,34 @@ export const runtime = "nodejs";
 
 // ===============================
 // GET LEADS (ADMIN DASHBOARD)
-// Supports: pagination, filtering, sorting
+// Pagination + filters + safe query handling
 // ===============================
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
 
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 100);
+    const page = Math.max(parseInt(searchParams.get("page") || "1"), 1);
+    const limit = Math.min(
+      Math.max(parseInt(searchParams.get("limit") || "20"), 1),
+      100
+    );
 
-    const status = searchParams.get("status"); // optional filter
-    const city = searchParams.get("city"); // optional filter
+    const status = searchParams.get("status");
+    const city = searchParams.get("city");
 
-    const offset = (page - 1) * limit;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
 
+    // base query
     let query = supabase
       .from("leads")
       .select("*", { count: "exact" })
       .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+      .range(from, to);
 
-    // filters
-    if (status) {
-      query = query.eq("status", status);
-    }
-
-    if (city) {
-      query = query.eq("city", city);
-    }
+    // optional filters
+    if (status) query = query.eq("status", status);
+    if (city) query = query.eq("city", city);
 
     const { data, error, count } = await query;
 
@@ -42,19 +42,24 @@ export async function GET(req) {
       );
     }
 
+    const total = count || 0;
+
     return Response.json({
       success: true,
-      leads: data,
+      leads: data || [],
       pagination: {
         page,
         limit,
-        total: count,
-        hasMore: offset + limit < count,
+        total,
+        hasMore: from + limit < total,
       },
     });
-  } catch (err) {
+  } catch (error) {
     return Response.json(
-      { success: false, error: "Server error" },
+      {
+        success: false,
+        error: "Unexpected server error",
+      },
       { status: 500 }
     );
   }

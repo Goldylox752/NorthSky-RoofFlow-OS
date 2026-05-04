@@ -3,9 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-// ===============================
-// INIT
-// ===============================
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2024-06-20",
 });
@@ -16,23 +13,15 @@ const supabase = createClient(
 );
 
 // ===============================
-// IDEMPOTENCY GUARD (PREVENT DOUBLE PROCESSING)
+// ATOMIC IDEMPOTENCY INSERT
 // ===============================
-async function alreadyProcessed(eventId) {
-  const { data } = await supabase
-    .from("stripe_events")
-    .select("id")
-    .eq("id", eventId)
-    .single();
-
-  return !!data;
-}
-
 async function markProcessed(eventId) {
-  await supabase.from("stripe_events").insert({
-    id: eventId,
-    processed_at: new Date().toISOString(),
-  });
+  const { error } = await supabase
+    .from("stripe_events")
+    .insert({ id: eventId });
+
+  // If duplicate → ignore safely
+  return !error;
 }
 
 // ===============================
@@ -55,15 +44,19 @@ export async function POST(req) {
         process.env.STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
-      console.error("❌ Stripe signature error:", err.message);
       return new Response("Invalid signature", { status: 400 });
     }
 
     // ===============================
-    // IDEMPOTENCY CHECK
+    // IDEMPOTENCY (DB-ATOMIC)
     // ===============================
-    if (await alreadyProcessed(event.id)) {
-      return Response.json({ received: true, duplicate: true });
+    const inserted = await markProcessed(event.id);
+
+    if (!inserted) {
+      return Response.json({
+        received: true,
+        duplicate: true,
+      });
     }
 
     // ===============================
@@ -72,7 +65,7 @@ export async function POST(req) {
     switch (event.type) {
 
       // =====================================================
-      // 🏙 CITY PURCHASE / CONTRACTOR ACTIVATION
+      // CHECKOUT COMPLETE
       // =====================================================
       case "checkout.session.completed": {
         const session = event.data.object;
@@ -82,33 +75,40 @@ export async function POST(req) {
         const subscriptionId = session.subscription;
         const city = session.metadata?.city;
 
-        if (!email) break;
+        if (!email) {
+          console.warn("Missing email in session:", session.id);
+          break;
+        }
 
         // ===============================
         // UPSERT CONTRACTOR
         // ===============================
-        const { data: contractor } = await supabase
-          .from("contractors")
-          .upsert(
-            {
-              email,
-              stripe_customer_id: customerId,
-              stripe_subscription_id: subscriptionId,
-              active: true,
-              plan: city ? "city_owner" : "pro",
-              city: city || null,
-            },
-            { onConflict: "email" }
-          )
-          .select()
-          .single();
+        const { data: contractor, error: contractorErr } =
+          await supabase
+            .from("contractors")
+            .upsert(
+              {
+                email,
+                stripe_customer_id: customerId,
+                stripe_subscription_id: subscriptionId,
+                active: true,
+                plan: city ? "city_owner" : "pro",
+                city: city || null,
+              },
+              { onConflict: "email" }
+            )
+            .select()
+            .single();
 
-        if (!contractor) break;
+        if (contractorErr) {
+          console.error("Contractor upsert failed:", contractorErr);
+          break;
+        }
 
         // ===============================
-        // CITY OWNERSHIP ENFORCEMENT (NO DUPLICATES)
+        // CITY OWNERSHIP LOCK (SAFE UPDATE)
         // ===============================
-        if (city) {
+        if (city && contractor) {
           const { data: cityRow } = await supabase
             .from("cities")
             .select("*")
@@ -119,16 +119,15 @@ export async function POST(req) {
             const existing = cityRow.active_contractors || [];
 
             if (!existing.includes(contractor.id)) {
-              const updated = [...existing, contractor.id];
-
               await supabase
                 .from("cities")
                 .update({
-                  active_contractors: updated,
-
-                  // 🔒 enforce exclusivity state machine
+                  active_contractors: [
+                    ...existing,
+                    contractor.id,
+                  ],
                   status:
-                    updated.length >= cityRow.max_contractors
+                    existing.length + 1 >= cityRow.max_contractors
                       ? "sold"
                       : "active",
                 })
@@ -136,14 +135,9 @@ export async function POST(req) {
             }
           }
 
-          // ===============================
-          // CLEAN INTENT TABLE (FINALIZE PURCHASE)
-          // ===============================
           await supabase
             .from("city_intents")
-            .update({
-              status: "confirmed",
-            })
+            .update({ status: "confirmed" })
             .eq("city", city)
             .eq("contractorId", contractor.id);
         }
@@ -152,7 +146,7 @@ export async function POST(req) {
       }
 
       // =====================================================
-      // 🔄 SUBSCRIPTION ACTIVATION
+      // SUBSCRIPTION UPDATED
       // =====================================================
       case "customer.subscription.updated": {
         const sub = event.data.object;
@@ -168,7 +162,7 @@ export async function POST(req) {
       }
 
       // =====================================================
-      // ❌ SUBSCRIPTION CANCELED
+      // SUBSCRIPTION DELETED
       // =====================================================
       case "customer.subscription.deleted": {
         const sub = event.data.object;
@@ -185,19 +179,13 @@ export async function POST(req) {
       }
 
       default:
-        console.log("⚠️ Unhandled event:", event.type);
+        console.log("Unhandled event:", event.type);
     }
-
-    // ===============================
-    // MARK EVENT PROCESSED
-    // ===============================
-    await markProcessed(event.id);
 
     return Response.json({ received: true });
 
   } catch (err) {
-    console.error("🔥 Webhook crash:", err.message);
-
+    console.error("Webhook crash:", err);
     return Response.json(
       { error: "Webhook failed" },
       { status: 500 }

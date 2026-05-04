@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { createClient } from "@supabase/supabase-js";
 
 // ===============================
-// AUTH CLIENT (USER CONTEXT)
+// USER AUTH CLIENT
 // ===============================
 function getUserClient(req) {
   return createClient(
@@ -19,10 +19,47 @@ function getUserClient(req) {
 }
 
 // ===============================
-// GET LEADS (SECURE + PAGINATED)
+// BASIC IP RATE LIMIT (LIGHTWEIGHT)
+// ===============================
+const ipHits = new Map();
+
+function rateLimit(ip) {
+  const now = Date.now();
+  const windowMs = 10 * 1000; // 10 sec
+  const maxHits = 20;
+
+  const record = ipHits.get(ip) || { count: 0, start: now };
+
+  if (now - record.start > windowMs) {
+    record.count = 0;
+    record.start = now;
+  }
+
+  record.count += 1;
+  ipHits.set(ip, record);
+
+  return record.count <= maxHits;
+}
+
+// ===============================
+// GET LEADS (HARDENED)
 // ===============================
 export async function GET(req) {
   try {
+    // ===============================
+    // RATE LIMIT (IP LEVEL)
+    // ===============================
+    const ip =
+      req.headers.get("x-forwarded-for") ||
+      "unknown";
+
+    if (!rateLimit(ip)) {
+      return Response.json(
+        { error: "RATE_LIMITED" },
+        { status: 429 }
+      );
+    }
+
     const userClient = getUserClient(req);
 
     // ===============================
@@ -40,43 +77,65 @@ export async function GET(req) {
     }
 
     // ===============================
-    // GET USER ROLE
+    // GET ROLE (minimal projection)
     // ===============================
     const { data: profile } = await supabase
       .from("contractors")
-      .select("id, role")
+      .select("id, role, city")
       .eq("id", user.id)
       .single();
 
-    const role = profile?.role || "contractor";
+    if (!profile) {
+      return Response.json(
+        { error: "PROFILE_NOT_FOUND" },
+        { status: 403 }
+      );
+    }
+
+    const role = profile.role;
 
     // ===============================
-    // QUERY PARAMS (PAGINATION READY)
+    // PAGINATION SAFETY
     // ===============================
     const { searchParams } = new URL(req.url);
 
-    const contractorId = searchParams.get("contractorId");
     const limit = Math.min(
-      parseInt(searchParams.get("limit") || "50"),
-      100
+      parseInt(searchParams.get("limit") || "25"),
+      50 // hard cap for safety
     );
-    const offset = parseInt(searchParams.get("offset") || "0");
+
+    const offset = Math.max(
+      parseInt(searchParams.get("offset") || "0"),
+      0
+    );
+
+    const contractorId = searchParams.get("contractorId");
 
     // ===============================
-    // BASE QUERY
+    // SAFE BASE QUERY (NO WILDCARD SELECT)
     // ===============================
     let query = supabase
       .from("leads")
-      .select("*")
+      .select(
+        `
+        id,
+        city,
+        status,
+        score,
+        price_cents,
+        assigned_contractor_id,
+        created_at
+      `
+      )
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
     // ===============================
-    // ROLE-BASED ACCESS CONTROL
+    // TENANT ENFORCEMENT (CRITICAL)
     // ===============================
 
     if (role === "contractor") {
-      // contractors ONLY see their leads
+      // force isolation — ignore query params
       query = query.eq(
         "assigned_contractor_id",
         profile.id
@@ -84,7 +143,7 @@ export async function GET(req) {
     }
 
     if (role === "admin") {
-      // admins can optionally filter
+      // admin can filter safely
       if (contractorId) {
         query = query.eq(
           "assigned_contractor_id",
@@ -94,13 +153,13 @@ export async function GET(req) {
     }
 
     // ===============================
-    // EXECUTE QUERY
+    // EXECUTE
     // ===============================
     const { data, error } = await query;
 
     if (error) {
       return Response.json(
-        { error: error.message },
+        { error: "QUERY_FAILED" },
         { status: 500 }
       );
     }
@@ -121,7 +180,7 @@ export async function GET(req) {
     console.error("GET leads error:", err);
 
     return Response.json(
-      { error: "Internal server error" },
+      { error: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }

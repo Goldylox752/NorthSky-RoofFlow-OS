@@ -1,13 +1,10 @@
-import Lead from "@/models/Lead";
-import dbConnect from "@/lib/db";
-import { routeLead } from "@/lib/routeLead";
-import { lockLead } from "@/lib/leadLock";
-import { calculateLeadPrice } from "@/lib/pricingEngine";
+import { supabase } from "@/lib/supabase";
 
+// ===============================
+// CREATE + ROUTE LEAD (SUPABASE SAAS ENGINE)
+// ===============================
 export async function POST(req) {
   try {
-    await dbConnect();
-
     const body = await req.json();
     const { email, phone, name, city, source } = body;
 
@@ -25,155 +22,122 @@ export async function POST(req) {
     const normalizedCity = city?.toLowerCase().trim() || "global";
 
     // ===============================
-    // IDEMPOTENCY KEY (HARD SAFETY LAYER)
+    // IDEMPOTENCY KEY (NO DUPLICATES)
     // ===============================
     const dedupeKey = `${identity}-${normalizedCity}`;
 
-    const existing = await Lead.findOne({ dedupeKey });
+    const { data: existing } = await supabase
+      .from("leads")
+      .select("*")
+      .eq("dedupe_key", dedupeKey)
+      .maybeSingle();
 
     if (existing) {
       return Response.json({
         success: true,
         lead: existing,
-        routed: false,
         duplicate: true,
       });
     }
 
     // ===============================
-    // SCORING ENGINE (V1)
+    // SCORING ENGINE
     // ===============================
     let score = 5;
     if (email) score += 1;
     if (phone) score += 2;
     if (city) score += 1;
-
     score = Math.min(score, 10);
 
     // ===============================
-    // CREATE LEAD (INITIAL STATE)
+    // CREATE LEAD (SOURCE OF TRUTH)
     // ===============================
-    const lead = await Lead.create({
-      email,
-      phone,
-      name,
-      city: city || null,
-      source: source || "direct",
+    const { data: lead, error: createError } = await supabase
+      .from("leads")
+      .insert({
+        email,
+        phone,
+        name,
+        city,
+        source: source || "direct",
 
-      dedupeKey,
+        dedupe_key: dedupeKey,
 
-      score,
-      status: "new",
+        score,
+        status: "new",
 
-      assigned_contractor_id: null,
+        price: 0,
+      })
+      .select()
+      .single();
 
-      locked_at: null,
-      lock_owner: null,
-      lock_expires_at: null,
-
-      price: 0,
-      billed: false,
-
-      events: [
-        {
-          type: "created",
-          timestamp: new Date(),
-          source: source || "direct",
-        },
-      ],
-    });
+    if (createError) {
+      return Response.json(
+        { success: false, error: createError.message },
+        { status: 500 }
+      );
+    }
 
     // ===============================
-    // ROUTING ENGINE (MARKET DECISION)
+    // ROUTING ENGINE (EXTERNAL LOGIC)
     // ===============================
     const assignment = await routeLead(lead);
 
     if (!assignment?.contractorId) {
-      await Lead.updateOne(
-        { _id: lead._id },
-        {
-          $push: {
-            events: {
-              type: "unassigned",
-              reason: "no_contractor_available",
-              timestamp: new Date(),
-            },
-          },
-        }
-      );
+      await supabase.from("events").insert({
+        lead_id: lead.id,
+        type: "unassigned",
+        payload: {
+          reason: "no_contractor_available",
+        },
+      });
 
       return Response.json({
         success: true,
-        lead,
         routed: false,
+        lead,
       });
     }
 
     // ===============================
-    // ATOMIC LOCK (CRITICAL SAFETY LAYER)
+    // ATOMIC CLAIM (RACE SAFE UPDATE)
     // ===============================
-    const locked = await lockLead(
-      Lead,
-      lead._id,
-      assignment.contractorId
-    );
+    const { data: updatedLead, error: updateError } = await supabase
+      .from("leads")
+      .update({
+        status: "assigned",
+        assigned_contractor_id: assignment.contractorId,
+        lock_owner: assignment.contractorId,
+        locked_at: new Date().toISOString(),
+        price: calculatePrice(score, assignment.cityTier),
+      })
+      .eq("id", lead.id)
+      .eq("status", "new")
+      .select()
+      .single();
 
-    if (!locked) {
+    if (updateError || !updatedLead) {
       return Response.json(
         {
           success: false,
-          error: "Lead already locked by another contractor",
+          error: "Race condition: lead already claimed",
         },
         { status: 409 }
       );
     }
 
     // ===============================
-    // PRICE ENGINE
+    // EVENT LOG (AUDIT TRAIL)
     // ===============================
-    const price = calculateLeadPrice(
-      score,
-      assignment.cityTier || "basic"
-    );
-
-    // ===============================
-    // SINGLE ATOMIC UPDATE (SOURCE OF TRUTH)
-    // ===============================
-    const updatedLead = await Lead.findOneAndUpdate(
-      {
-        _id: lead._id,
-        status: "new", // prevents race overwrite
+    await supabase.from("events").insert({
+      lead_id: lead.id,
+      type: "assigned",
+      payload: {
+        contractorId: assignment.contractorId,
+        price: updatedLead.price,
+        city: assignment.city,
       },
-      {
-        $set: {
-          status: "assigned",
-          assigned_contractor_id: assignment.contractorId,
-          price,
-          locked_at: new Date(),
-          lock_owner: assignment.contractorId,
-        },
-        $push: {
-          events: {
-            type: "assigned",
-            contractorId: assignment.contractorId,
-            price,
-            city: assignment.city,
-            timestamp: new Date(),
-          },
-        },
-      },
-      { new: true }
-    );
-
-    if (!updatedLead) {
-      return Response.json(
-        {
-          success: false,
-          error: "State transition failed (race condition)",
-        },
-        { status: 409 }
-      );
-    }
+    });
 
     // ===============================
     // RESPONSE
@@ -184,19 +148,16 @@ export async function POST(req) {
       lead: updatedLead,
       assignment: {
         contractorId: assignment.contractorId,
-        price,
+        price: updatedLead.price,
         city: assignment.city,
       },
     });
 
   } catch (error) {
-    console.error("🔥 Lead creation crash:", error);
+    console.error("🔥 Lead crash:", error);
 
     return Response.json(
-      {
-        success: false,
-        error: "Internal server error",
-      },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }

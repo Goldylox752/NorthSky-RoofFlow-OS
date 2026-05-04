@@ -6,50 +6,88 @@ import Navbar from "@/components/Navbar";
 export default function Dashboard() {
   const [leads, setLeads] = useState([]);
   const [connected, setConnected] = useState(false);
+
   const eventRef = useRef(null);
+  const lastEventIdRef = useRef(null);
+  const reconnectTimer = useRef(null);
 
   // ===============================
-  // REAL-TIME STREAM (RESILIENT)
+  // SAFE MERGE ENGINE (ANTI-DUP + ORDER FIX)
+  // ===============================
+  const mergeLead = (incoming) => {
+    setLeads((prev) => {
+      const index = prev.findIndex((l) => l.id === incoming.id);
+
+      if (index >= 0) {
+        const copy = [...prev];
+        copy[index] = {
+          ...copy[index],
+          ...incoming,
+        };
+        return copy;
+      }
+
+      return [incoming, ...prev].slice(0, 100);
+    });
+  };
+
+  // ===============================
+  // REAL-TIME STREAM (PRODUCTION GRADE SSE)
   // ===============================
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_API_URL;
 
-    if (!url) {
-      console.error("Missing API URL");
-      return;
-    }
+    if (!url) return;
 
     const connect = () => {
-      const es = new EventSource(`${url}/api/leads/stream`);
+      const es = new EventSource(
+        `${url}/api/leads/stream?lastEventId=${lastEventIdRef.current || ""}`
+      );
+
       eventRef.current = es;
 
-      es.onopen = () => setConnected(true);
+      // ===============================
+      // OPEN
+      // ===============================
+      es.onopen = () => {
+        setConnected(true);
+      };
 
+      // ===============================
+      // MESSAGE HANDLER
+      // ===============================
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
 
-          // prevent full overwrite spam
-          setLeads((prev) => {
-            const exists = prev.find((l) => l.id === data.id);
+          // ===============================
+          // EVENT DEDUP (CRITICAL FIX)
+          // ===============================
+          if (data.eventId && data.eventId === lastEventIdRef.current) {
+            return;
+          }
 
-            if (exists) {
-              return prev.map((l) => (l.id === data.id ? data : l));
-            }
+          lastEventIdRef.current = data.eventId;
 
-            return [data, ...prev].slice(0, 100);
-          });
+          // ===============================
+          // APPLY UPDATE
+          // ===============================
+          mergeLead(data);
         } catch (err) {
-          console.error("Stream parse error:", err);
+          console.error("Parse error:", err);
         }
       };
 
+      // ===============================
+      // ERROR + AUTO RECONNECT
+      // ===============================
       es.onerror = () => {
         setConnected(false);
         es.close();
 
-        // auto-reconnect (important for SaaS reliability)
-        setTimeout(connect, 3000);
+        if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+
+        reconnectTimer.current = setTimeout(connect, 2500);
       };
     };
 
@@ -57,6 +95,7 @@ export default function Dashboard() {
 
     return () => {
       if (eventRef.current) eventRef.current.close();
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
     };
   }, []);
 
@@ -72,21 +111,26 @@ export default function Dashboard() {
       <div style={styles.container}>
         {/* HEADER */}
         <div style={styles.header}>
-          <h1 style={styles.title}>Live Lead Feed</h1>
+          <div>
+            <h1 style={styles.title}>Live Lead Feed</h1>
+            <p style={styles.sub}>
+              Real-time marketplace activity stream
+            </p>
+          </div>
 
           <div style={{ ...styles.status, color: statusColor }}>
-            ● {connected ? "Live" : "Disconnected"}
+            ● {connected ? "LIVE" : "RECONNECTING"}
           </div>
         </div>
 
         {/* EMPTY STATE */}
         {leads.length === 0 && (
           <div style={styles.empty}>
-            No leads yet — waiting for incoming traffic...
+            Waiting for incoming leads...
           </div>
         )}
 
-        {/* LEADS */}
+        {/* LEADS GRID */}
         <div style={styles.grid}>
           {leads.map((l) => (
             <div key={l.id} style={styles.card}>
@@ -98,12 +142,11 @@ export default function Dashboard() {
               <p style={styles.text}>⚡ Score: {l.score ?? "N/A"}</p>
 
               <p style={styles.text}>
-                🧠 Assigned:{" "}
-                {l.assigned_contractor_id || "pending"}
+                🧠 Contractor: {l.assigned_contractor_id || "pending"}
               </p>
 
               <p style={styles.textSmall}>
-                💰 Price: ${((l.price || 0) / 100).toFixed(2)}
+                💰 ${(l.price || 0) / 100}
               </p>
             </div>
           ))}
@@ -111,101 +154,4 @@ export default function Dashboard() {
       </div>
     </main>
   );
-}
-
-// ===============================
-// STYLES
-// ===============================
-const styles = {
-  page: {
-    background: "#0b1220",
-    minHeight: "100vh",
-    color: "white",
-  },
-
-  container: {
-    padding: "40px",
-    maxWidth: 1000,
-    margin: "0 auto",
-  },
-
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-  },
-
-  status: {
-    fontSize: 14,
-    fontWeight: 600,
-  },
-
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-    gap: 12,
-  },
-
-  card: {
-    background: "#111827",
-    padding: 14,
-    borderRadius: 10,
-    border: "1px solid #1f2937",
-  },
-
-  row: {
-    display: "flex",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-
-  text: {
-    fontSize: 13,
-    opacity: 0.85,
-    margin: "4px 0",
-  },
-
-  textSmall: {
-    fontSize: 12,
-    opacity: 0.6,
-  },
-
-  empty: {
-    padding: 20,
-    background: "#111827",
-    borderRadius: 10,
-    textAlign: "center",
-    opacity: 0.7,
-  },
-};
-
-// ===============================
-// BADGE STYLE FUNCTION
-// ===============================
-function badge(status) {
-  const base = {
-    fontSize: 11,
-    padding: "2px 8px",
-    borderRadius: 999,
-    textTransform: "uppercase",
-  };
-
-  switch (status) {
-    case "assigned":
-      return { ...base, background: "#16a34a", color: "white" };
-    case "new":
-      return { ...base, background: "#2563eb", color: "white" };
-    case "billed":
-      return { ...base, background: "#f59e0b", color: "black" };
-    case "failed":
-      return { ...base, background: "#dc2626", color: "white" };
-    default:
-      return { ...base, background: "#374151", color: "white" };
-  }
 }

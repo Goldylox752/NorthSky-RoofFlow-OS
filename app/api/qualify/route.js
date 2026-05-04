@@ -6,11 +6,21 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// =====================
+// LEAD SCORING ENGINE
+// =====================
 export async function POST(req) {
   try {
     await dbConnect();
 
     const { leadId, message } = await req.json();
+
+    if (!leadId) {
+      return Response.json(
+        { success: false, error: "Missing leadId" },
+        { status: 400 }
+      );
+    }
 
     const lead = await Lead.findById(leadId);
 
@@ -21,40 +31,64 @@ export async function POST(req) {
       );
     }
 
+    // =====================
+    // AI SCORING
+    // =====================
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
+      temperature: 0,
       messages: [
         {
           role: "system",
           content:
-            "You are a roofing sales qualification AI. Score intent from 1 to 10. Respond ONLY with a number.",
+            "You are a roofing lead qualification system. Score purchase intent from 1-10. ONLY return a number. No words.",
         },
         {
           role: "user",
-          content: message || "No message provided",
+          content: message?.trim() || "No message provided",
         },
       ],
     });
 
-    const raw = completion.choices[0].message.content || "";
-    const score = Math.min(
-      10,
-      Math.max(1, parseInt(raw.match(/\d+/)?.[0] || "5"))
-    );
+    const raw = completion.choices?.[0]?.message?.content || "";
 
+    const parsedScore = parseInt(raw.match(/\d+/)?.[0]);
+
+    const score = Number.isNaN(parsedScore)
+      ? 5
+      : Math.max(1, Math.min(10, parsedScore));
+
+    // =====================
+    // BUSINESS LOGIC
+    // =====================
     lead.score = score;
-    lead.status = score >= 7 ? "qualified" : "new";
+
+    if (score >= 8) {
+      lead.status = "hot";
+    } else if (score >= 6) {
+      lead.status = "qualified";
+    } else {
+      lead.status = "new";
+    }
 
     await lead.save();
 
+    // =====================
+    // RESPONSE
+    // =====================
     return Response.json({
       success: true,
       score,
       status: lead.status,
     });
   } catch (error) {
+    console.error("Scoring error:", error);
+
     return Response.json(
-      { success: false, error: error.message },
+      {
+        success: false,
+        error: "Lead scoring failed",
+      },
       { status: 500 }
     );
   }

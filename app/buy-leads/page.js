@@ -2,11 +2,17 @@
 
 import { useState } from "react";
 
-const API_URL = "https://your-render-app.onrender.com";
+// ⚠️ Move this to .env in production
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://your-render-app.onrender.com";
 
 export default function BuyLeads() {
   const [loading, setLoading] = useState(null);
 
+  // ===============================
+  // STRIPE CHECKOUT HANDLER
+  // ===============================
   const buyLead = async (priceId) => {
     try {
       setLoading(priceId);
@@ -16,58 +22,73 @@ export default function BuyLeads() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify({
+          priceId,
+          mode: "payment",
+          metadata: {
+            source: "lead_marketplace",
+            product: "roofing_lead",
+          },
+        }),
       });
 
       const data = await res.json();
 
-      if (data?.url) {
-        window.location.href = data.url;
-      } else {
-        alert("Checkout failed. Try again.");
+      if (!res.ok || !data?.url) {
+        throw new Error("Checkout failed");
       }
+
+      window.location.href = data.url;
     } catch (err) {
-      console.error(err);
-      alert("Something went wrong.");
+      console.error("Checkout error:", err.message);
+      alert("Something went wrong. Try again.");
     } finally {
       setLoading(null);
     }
   };
 
+  // ===============================
+  // PRODUCTS
+  // ===============================
   const plans = [
     {
       name: "Hot Lead",
       price: "$49",
       id: "price_hot_lead",
-      desc: "Recently submitted. High intent.",
+      desc: "Recently submitted homeowner. High intent.",
       highlight: false,
+      value: "low",
     },
     {
       name: "Verified Lead",
       price: "$99",
       id: "price_verified_lead",
-      desc: "Contact confirmed. Ready to talk.",
+      desc: "Phone + email verified. Ready to talk.",
       highlight: true,
+      value: "medium",
     },
     {
       name: "Exclusive Lead",
       price: "$149",
       id: "price_exclusive_lead",
-      desc: "Sold once. Highest close rate.",
+      desc: "Sold once. No competition. Highest close rate.",
       highlight: false,
+      value: "high",
     },
   ];
 
   return (
     <main className="max-w-5xl mx-auto px-6 py-20 text-center">
+      {/* HEADER */}
       <h1 className="text-4xl font-bold">
         Buy High-Intent Roofing Leads
       </h1>
 
       <p className="text-gray-600 mt-4">
-        Skip cold outreach. Get homeowners ready to buy — delivered instantly.
+        Real homeowners actively requesting roofing quotes — delivered instantly.
       </p>
 
+      {/* GRID */}
       <div className="grid md:grid-cols-3 gap-8 mt-12">
         {plans.map((plan) => (
           <div
@@ -83,9 +104,12 @@ export default function BuyLeads() {
             )}
 
             <h2 className="text-xl font-bold">{plan.name}</h2>
+
             <p className="text-3xl font-bold mt-2">{plan.price}</p>
+
             <p className="text-gray-500 mt-2 text-sm">{plan.desc}</p>
 
+            {/* CTA */}
             <button
               onClick={() => buyLead(plan.id)}
               disabled={loading === plan.id}
@@ -101,8 +125,9 @@ export default function BuyLeads() {
         ))}
       </div>
 
+      {/* FOOTER */}
       <p className="text-xs text-gray-400 mt-10">
-        Limited supply per area. First come, first served.
+        Limited supply per city. Leads are routed instantly after purchase.
       </p>
     </main>
   );

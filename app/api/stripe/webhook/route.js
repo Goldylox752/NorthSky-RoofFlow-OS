@@ -1,10 +1,13 @@
 import Stripe from "stripe";
 import { supabase } from "@/lib/supabase";
 
+export const runtime = "nodejs";
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // ===============================
-// STRIPE WEBHOOK
+// STRIPE WEBHOOK (PRODUCTION)
+// Handles subscriptions + checkout + activation
 // ===============================
 export async function POST(req) {
   try {
@@ -13,7 +16,9 @@ export async function POST(req) {
 
     let event;
 
-    // Verify webhook signature (IMPORTANT)
+    // ===============================
+    // VERIFY WEBHOOK SIGNATURE
+    // ===============================
     try {
       event = stripe.webhooks.constructEvent(
         body,
@@ -21,49 +26,108 @@ export async function POST(req) {
         process.env.STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
+      console.error("❌ Stripe signature error:", err.message);
       return new Response(`Webhook Error: ${err.message}`, {
         status: 400,
       });
     }
 
     // ===============================
-    // PAYMENT SUCCESS
+    // EVENT ROUTING
     // ===============================
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
+    switch (event.type) {
 
-      const email = session.customer_details?.email;
-      const customerId = session.customer;
-      const subscriptionId = session.subscription;
+      // ===============================
+      // 1. CHECKOUT COMPLETED
+      // ===============================
+      case "checkout.session.completed": {
+        const session = event.data.object;
 
-      if (!email) {
-        return Response.json({ error: "No email found" }, { status: 400 });
+        const email = session.customer_details?.email;
+        const customerId = session.customer;
+        const subscriptionId = session.subscription;
+
+        if (!email) {
+          return Response.json(
+            { error: "Missing customer email" },
+            { status: 400 }
+          );
+        }
+
+        // UPSERT contractor subscription record
+        const { error } = await supabase
+          .from("contractors")
+          .upsert(
+            {
+              email,
+              stripe_customer_id: customerId,
+              stripe_subscription_id: subscriptionId,
+              plan: "pro",
+              active: true,
+            },
+            {
+              onConflict: "email",
+            }
+          );
+
+        if (error) {
+          console.error("❌ Supabase error:", error.message);
+        }
+
+        break;
       }
 
       // ===============================
-      // ACTIVATE USER IN SUPABASE
+      // 2. SUBSCRIPTION UPDATED
       // ===============================
-      const { error } = await supabase
-        .from("subscribers")
-        .upsert([
-          {
-            email,
-            stripe_customer_id: customerId,
-            stripe_subscription_id: subscriptionId,
-            status: "active",
-          },
-        ]);
+      case "customer.subscription.updated": {
+        const sub = event.data.object;
 
-      if (error) {
-        console.error("Supabase error:", error.message);
+        const customerId = sub.customer;
+        const status = sub.status;
+
+        await supabase
+          .from("contractors")
+          .update({
+            active: status === "active",
+          })
+          .eq("stripe_customer_id", customerId);
+
+        break;
       }
+
+      // ===============================
+      // 3. SUBSCRIPTION DELETED
+      // ===============================
+      case "customer.subscription.deleted": {
+        const sub = event.data.object;
+
+        await supabase
+          .from("contractors")
+          .update({
+            active: false,
+            plan: "free",
+          })
+          .eq("stripe_customer_id", sub.customer);
+
+        break;
+      }
+
+      default:
+        console.log(`⚠️ Unhandled event type: ${event.type}`);
     }
 
-    return new Response(JSON.stringify({ received: true }), {
-      status: 200,
-    });
+    // ===============================
+    // RESPONSE
+    // ===============================
+    return new Response(
+      JSON.stringify({ received: true }),
+      { status: 200 }
+    );
 
   } catch (err) {
+    console.error("🔥 Webhook error:", err);
+
     return new Response(
       JSON.stringify({ error: err.message }),
       { status: 500 }

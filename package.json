@@ -9,6 +9,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "build": "echo \"No build step needed\"",
+    "lint": "eslint .",
     "test": "echo \"No tests yet\" && exit 0"
   },
   "dependencies": {

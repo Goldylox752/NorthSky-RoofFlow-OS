@@ -1,12 +1,27 @@
+// =====================
+// ENV SETUP
+// =====================
 if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
 
+// =====================
+// IMPORTS
+// =====================
 const express = require("express");
 const cors = require("cors");
 const twilio = require("twilio");
 const Stripe = require("stripe");
 
+// Node <18 fallback
+let fetchFn = global.fetch;
+if (!fetchFn) {
+  fetchFn = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
+}
+
+// =====================
+// APP INIT
+// =====================
 const app = express();
 
 // =====================
@@ -19,10 +34,19 @@ const {
   STRIPE_SECRET_KEY,
   FRONTEND_URL,
   OLLAMA_URL,
+  PORT,
 } = process.env;
 
+// Debug (safe boolean check)
+console.log("ENV CHECK:", {
+  TWILIO: !!(TWILIO_SID && TWILIO_AUTH_TOKEN),
+  STRIPE: !!STRIPE_SECRET_KEY,
+  OLLAMA: !!OLLAMA_URL,
+  FRONTEND: !!FRONTEND_URL,
+});
+
 // =====================
-// SAFE INIT (NO CRASH)
+// SAFE INIT
 // =====================
 const twilioClient =
   TWILIO_SID && TWILIO_AUTH_TOKEN
@@ -38,28 +62,37 @@ app.use(cors({ origin: FRONTEND_URL || "*" }));
 app.use(express.json());
 
 // =====================
-// OLLAMA AI (CLOSER ENGINE)
+// OLLAMA AI
 // =====================
 async function askOllama(prompt) {
+  if (!OLLAMA_URL) {
+    return "Are you available this week for a quick roof inspection?";
+  }
+
   try {
-    const res = await fetch(`${OLLAMA_URL}/api/chat`, {
+    const response = await fetchFn(`${OLLAMA_URL}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         model: "llama3",
         messages: [
           {
             role: "system",
             content:
-              "You are a high-conversion roofing sales closer. You ask ONE question at a time, keep replies short, and always move toward booking an inspection.",
+              "You are a high-conversion roofing sales closer. Ask ONE question at a time, be concise, and guide toward booking.",
           },
-          { role: "user", content: prompt },
+          {
+            role: "user",
+            content: prompt,
+          },
         ],
         stream: false,
       }),
     });
 
-    const data = await res.json();
+    const data = await response.json();
     return data?.message?.content || "When would you like a quick inspection?";
   } catch (err) {
     console.error("Ollama error:", err.message);
@@ -107,15 +140,15 @@ function sendDrip(phone, messages) {
 }
 
 // =====================
-// HEALTH CHECK
+// ROUTES
 // =====================
+
+// Health
 app.get("/", (req, res) => {
-  res.send("🚀 RoofFlow API LIVE (AI Closer Mode)");
+  res.send("🚀 RoofFlow API LIVE");
 });
 
-// =====================
-// CHECKOUT (SAFE)
-// =====================
+// Checkout
 app.post("/api/checkout", async (req, res) => {
   try {
     if (!stripe) {
@@ -148,21 +181,21 @@ app.post("/api/checkout", async (req, res) => {
       metadata: { email, phone, plan },
     });
 
-    res.json({ url: session.url });
+    return res.json({ url: session.url });
   } catch (err) {
     console.error("Checkout error:", err.message);
-    res.status(500).json({ error: "Checkout failed" });
+    return res.status(500).json({ error: "Checkout failed" });
   }
 });
 
-// =====================
-// LEAD SYSTEM
-// =====================
+// Lead
 app.post("/api/lead", async (req, res) => {
   try {
     const { phone } = req.body;
 
-    if (!phone) return res.status(400).json({ error: "Missing phone" });
+    if (!phone) {
+      return res.status(400).json({ error: "Missing phone" });
+    }
 
     if (twilioClient) {
       await twilioClient.messages.create({
@@ -174,22 +207,22 @@ app.post("/api/lead", async (req, res) => {
 
     sendDrip(phone, dripSequence());
 
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
     console.error("Lead error:", err.message);
-    res.status(500).json({ error: "Lead error" });
+    return res.status(500).json({ error: "Lead error" });
   }
 });
 
-// =====================
-// SMS BOT (AI CLOSER)
-// =====================
+// SMS bot
 app.post("/sms", async (req, res) => {
   try {
     const msg = req.body?.Body;
     const from = req.body?.From;
 
-    if (!msg || !from) return res.sendStatus(200);
+    if (!msg || !from) {
+      return res.sendStatus(200);
+    }
 
     const reply = await askOllama(msg);
 
@@ -201,11 +234,21 @@ app.post("/sms", async (req, res) => {
       });
     }
 
-    res.sendStatus(200);
+    return res.sendStatus(200);
   } catch (err) {
     console.error("SMS error:", err.message);
-    res.sendStatus(200);
+    return res.sendStatus(200);
   }
 });
 
+// =====================
+// START SERVER (CRITICAL FOR RENDER)
+// =====================
+const serverPort = PORT || 3000;
+
+app.listen(serverPort, () => {
+  console.log(`🚀 Server running on port ${serverPort}`);
+});
+
+// Optional export (for testing)
 module.exports = app;

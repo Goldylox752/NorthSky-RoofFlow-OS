@@ -8,45 +8,39 @@ export async function GET(req) {
     // ===============================
     // VALIDATION
     // ===============================
-    if (!contractorId) {
+    if (!contractorId || typeof contractorId !== "string") {
       return Response.json(
-        { error: "Missing contractorId" },
+        { error: "Invalid contractorId" },
         { status: 400 }
       );
     }
 
     // ===============================
-    // 🔐 SAFE AGGREGATION (DB-SIDE)
+    // 🔥 DB-SIDE AGGREGATION (FAST PATH)
     // ===============================
     const { data, error } = await supabase
       .from("leads")
       .select("price, billed")
       .eq("assigned_contractor_id", contractorId);
 
-    if (error) {
-      throw new Error(error.message);
-    }
+    if (error) throw error;
+
+    const rows = data ?? [];
 
     // ===============================
-    // NULL SAFETY
+    // FAST REDUCE (CPU LIGHT)
     // ===============================
-    const safeData = data || [];
+    const summary = rows.reduce(
+      (acc, lead) => {
+        const price = Number(lead.price) || 0;
 
-    // ===============================
-    // CALCULATIONS (CONTROLLED LAYER)
-    // ===============================
-    let earnings = 0;
-    let billed = 0;
+        acc.earnings += price;
+        if (lead.billed) acc.billed += 1;
 
-    for (const lead of safeData) {
-      const price = Number(lead.price || 0);
-
-      earnings += price;
-
-      if (lead.billed === true) {
-        billed++;
-      }
-    }
+        return acc;
+      },
+      { earnings: 0, billed: 0 }
+    );
 
     // ===============================
     // RESPONSE
@@ -54,11 +48,10 @@ export async function GET(req) {
     return Response.json({
       success: true,
       contractorId,
-      earnings,
-      billed,
-      leads: safeData.length,
+      earnings: summary.earnings,
+      billed: summary.billed,
+      leads: rows.length,
     });
-
   } catch (err) {
     console.error("Revenue endpoint error:", err);
 

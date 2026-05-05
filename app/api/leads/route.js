@@ -25,36 +25,57 @@ function getIP(req) {
   return xf ? xf.split(",")[0].trim() : req.headers.get("x-real-ip") || "unknown";
 }
 
-// ===============================
-// 🚫 ADAPTIVE RATE LIMIT (BOT SPIKE RESISTANT)
-// ===============================
-async function rateLimit(ip) {
-  const windowMs = 60 * 1000;
-  const max = 30;
+function getFingerprint(req, body) {
+  const ua = req.headers.get("user-agent") || "";
+  return hash(`${ua}:${JSON.stringify(body)}`);
+}
 
-  const bucket = Math.floor(Date.now() / windowMs);
-  const id = `${ip}:${bucket}`;
+// ===============================
+// 🧠 ADAPTIVE BOT SCORE ENGINE
+// ===============================
+async function getRiskScore(ip, fingerprint) {
+  const window = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
-  // single atomic increment using upsert
+  const { data } = await supabase
+    .from("rate_limits")
+    .select("count")
+    .or(`ip.eq.${ip},fingerprint.eq.${fingerprint}`)
+    .gte("created_at", window);
+
+  const attempts = data?.reduce((a, b) => a + (b.count || 0), 0) || 0;
+
+  if (attempts > 80) return 10; // bot
+  if (attempts > 40) return 7;
+  if (attempts > 20) return 4;
+  return 1;
+}
+
+// ===============================
+// 🚫 ATOMIC RATE LIMIT (FIXED RACE CONDITION)
+// ===============================
+async function rateLimit(ip, fingerprint) {
+  const bucket = Math.floor(Date.now() / 60000);
+  const id = `${ip}:${fingerprint}:${bucket}`;
+
   const { data, error } = await supabase
     .from("rate_limits")
     .upsert(
       {
         id,
         ip,
+        fingerprint,
         count: 1,
-        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
       },
       { onConflict: "id" }
     )
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) return false;
 
   const newCount = (data.count || 0) + 1;
 
-  // update counter (single row mutation only)
   await supabase
     .from("rate_limits")
     .update({
@@ -63,8 +84,7 @@ async function rateLimit(ip) {
     })
     .eq("id", id);
 
-  // 🔥 adaptive penalty (hard throttle if spam detected)
-  return newCount <= max;
+  return newCount <= 30;
 }
 
 // ===============================
@@ -75,19 +95,33 @@ export async function POST(req) {
 
   try {
     const body = await req.json();
+
     let { phone, score = 5, cityTier = "basic", city } = body;
 
     const ip = getIP(req);
+    const fingerprint = getFingerprint(req, body);
 
     // ===============================
-    // RATE LIMIT
+    // BOT FIREWALL LAYER 1
     // ===============================
-    const allowed = await rateLimit(ip);
+    const allowed = await rateLimit(ip, fingerprint);
 
     if (!allowed) {
       return Response.json(
-        { error: "Rate limited (bot protection active)" },
+        { error: "Rate limited (bot firewall active)" },
         { status: 429 }
+      );
+    }
+
+    // ===============================
+    // BOT FIREWALL LAYER 2 (ADAPTIVE)
+    // ===============================
+    const risk = await getRiskScore(ip, fingerprint);
+
+    if (risk >= 9) {
+      return Response.json(
+        { error: "Blocked (bot detected)" },
+        { status: 403 }
       );
     }
 
@@ -110,14 +144,12 @@ export async function POST(req) {
     // IDS
     // ===============================
     const identityHash = hash(`${phone}:${city || "global"}`);
-    const requestKey =
-      req.headers.get("x-idempotency-key") ||
-      hash(JSON.stringify(body));
+    const requestKey = hash(JSON.stringify(body));
 
     const leadValue = calculateLeadValue(score, cityTier);
 
     // ===============================
-    // 🔥 TRUE ATOMIC INSERT (DB GUARANTEE REQUIRED)
+    // LEAD INSERT (RACE SAFE)
     // ===============================
     const { data: lead, error } = await supabase
       .from("leads")
@@ -125,6 +157,12 @@ export async function POST(req) {
         phone,
         identity_hash: identityHash,
         request_key: requestKey,
+
+        fingerprint,
+        ip,
+
+        risk_score: risk,
+
         score,
         city,
         city_tier: cityTier,
@@ -137,7 +175,6 @@ export async function POST(req) {
       .select()
       .single();
 
-    // duplicate safe path (unique constraint in DB)
     if (error?.code === "23505") {
       return Response.json({
         success: true,
@@ -148,7 +185,7 @@ export async function POST(req) {
     if (error) throw error;
 
     // ===============================
-    // 🧠 QUEUE INSERT (RECOVERY SAFE)
+    // QUEUE INSERT (RECOVERY SAFE)
     // ===============================
     const { error: queueError } = await supabase
       .from("lead_queue")
@@ -156,11 +193,11 @@ export async function POST(req) {
         lead_id: lead.id,
         status: "pending",
         attempts: 0,
+        risk_score: risk,
         created_at: new Date().toISOString(),
       });
 
     if (queueError) {
-      // 🔥 DO NOT DELETE — mark for recovery worker
       await supabase
         .from("leads")
         .update({
@@ -174,13 +211,11 @@ export async function POST(req) {
       );
     }
 
-    // ===============================
-    // RESPONSE
-    // ===============================
     return Response.json({
       success: true,
       leadId: lead.id,
       leadValue,
+      risk_score: risk,
       latency_ms: Date.now() - start,
     });
 

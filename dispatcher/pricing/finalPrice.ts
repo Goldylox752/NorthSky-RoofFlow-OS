@@ -1,9 +1,11 @@
 import { calculateFinalPrice } from "@/lib/pricingEngine";
 
+const PRICING_VERSION = "v1.0";
+
 const LEAD_BASE_BY_SCORE = {
-  high: 5000,  // 8–10
-  mid: 3000,   // 6–7
-  low: 1500,   // 1–5
+  high: 5000, // 8–10
+  mid: 3000,  // 6–7
+  low: 1500,  // 1–5
 };
 
 function getBaseLeadValue(score: number) {
@@ -16,8 +18,19 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(Math.max(n, min), max);
 }
 
+// smoother curve instead of hard thresholds
+function calculateScarcityFactor(active = 0, capacity = 1) {
+  const ratio = active / capacity;
+
+  if (ratio >= 1.2) return 2.5;
+  if (ratio >= 1.0) return 2.0;
+  if (ratio >= 0.75) return 1.5;
+  if (ratio >= 0.5) return 1.2;
+  return 1;
+}
+
 // ===============================
-// 🔐 CORE PRICE LOCK ENGINE
+// 🔐 CORE PRICE LOCK ENGINE (HARDENED)
 // ===============================
 export function lockLeadPrice({
   lead,
@@ -25,14 +38,14 @@ export function lockLeadPrice({
   cityRow,
   systemMetrics,
 }) {
-  const score = clamp(Number(lead.score || 0), 1, 10);
+  const score = clamp(Number(lead?.score ?? 0), 1, 10);
 
   // 1. BASE VALUE (deterministic)
   const baseLeadValue = getBaseLeadValue(score);
 
-  // 2. DEMAND MULTIPLIER (safe fallback + clamp)
+  // 2. DEMAND MULTIPLIER (sandboxed + clamped)
   const demandMultiplier = clamp(
-    systemMetrics?.demandMultiplier ?? 1,
+    Number(systemMetrics?.demandMultiplier ?? 1),
     0.5,
     3
   );
@@ -45,42 +58,54 @@ export function lockLeadPrice({
       ? 1.5
       : 1;
 
-  // 4. CITY SCARCITY FACTOR (capacity pressure)
-  const capacity = cityRow?.capacity ?? 1;
-  const active = cityRow?.active_contractors ?? 0;
-
-  const scarcityRatio = active / capacity;
-
-  const cityScarcityFactor =
-    scarcityRatio >= 1
-      ? 2.0
-      : scarcityRatio >= 0.75
-      ? 1.5
-      : 1;
+  // 4. CITY SCARCITY (smoothed model)
+  const cityScarcityFactor = calculateScarcityFactor(
+    cityRow?.active_contractors,
+    cityRow?.capacity
+  );
 
   // ===============================
-  // 💰 FINAL PRICE (LOCKED)
+  // 💰 FINAL PRICE
   // ===============================
-  const finalPrice = calculateFinalPrice({
+  const rawPrice = calculateFinalPrice({
     baseLeadValue,
     demandMultiplier,
     contractorTierMultiplier,
     cityScarcityFactor,
   });
 
-  const lockedPrice = Math.round(clamp(finalPrice, 500, 25000));
+  const finalPrice = Math.round(
+    clamp(rawPrice, 500, 25000)
+  );
+
+  // ===============================
+  // 🔍 AUDIT HASH (IMPORTANT FOR TRUST + DEBUGGING)
+  // ===============================
+  const auditHash = [
+    lead?.id,
+    score,
+    baseLeadValue,
+    demandMultiplier,
+    contractorTierMultiplier,
+    cityScarcityFactor,
+    PRICING_VERSION,
+  ].join("|");
 
   return {
-    finalPrice: lockedPrice,
-
+    finalPrice,
     lockedAt: new Date().toISOString(),
 
+    pricingVersion: PRICING_VERSION,
+
+    auditHash,
+
     breakdown: {
+      score,
       baseLeadValue,
       demandMultiplier,
       contractorTierMultiplier,
       cityScarcityFactor,
-      raw: finalPrice,
+      rawPrice,
     },
   };
 }

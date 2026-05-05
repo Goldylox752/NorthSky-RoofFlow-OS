@@ -23,19 +23,11 @@ export default function Page() {
     }));
   };
 
-  // ===============================
-  // SUBMIT → EVENT-DRIVEN PIPELINE ENTRY
-  // ===============================
   const handleSubmit = async () => {
     if (loading) return;
 
     if (!form.email || !form.phone) {
       alert("Email and phone are required.");
-      return;
-    }
-
-    if (!API_URL) {
-      alert("System not connected.");
       return;
     }
 
@@ -57,22 +49,16 @@ export default function Page() {
         throw new Error(data.error || "Request failed");
       }
 
-      // ===============================
-      // CAPTURE LEAD ID (IMPORTANT FOR TRACKING)
-      // ===============================
       setLeadId(data.lead?.id || null);
       setSuccess(true);
 
-      // reset form
       setForm({
         name: "",
         email: "",
         phone: "",
         city: "",
       });
-
     } catch (err) {
-      console.error(err);
       alert("Submission failed. Try again.");
     } finally {
       setLoading(false);
@@ -82,28 +68,55 @@ export default function Page() {
   return (
     <main style={styles.main}>
       <div style={styles.container}>
+
+        {/* =========================
+            HERO (CONVERSION LAYER)
+        ========================= */}
         <h1 style={styles.h1}>
-          Stop Chasing Roofing Leads.<br />Start Closing Them.
+          Exclusive Roofing Leads.<br />
+          <span style={{ color: "#00ffb3" }}>
+            Only 1 Contractor Per City.
+          </span>
         </h1>
 
         <p style={styles.subtext}>
-          RoofFlow delivers exclusive, high-intent roofing jobs directly to contractors.
+          Get high-intent homeowners ready to hire.
+          Leads range from <b>$15–$50 each</b> and are never shared.
         </p>
 
-        {/* SUCCESS STATE */}
+        {/* TRUST BAR */}
+        <div style={styles.trustBar}>
+          ✔ Verified homeowners  
+          ✔ Real-time routing  
+          ✔ No shared leads  
+        </div>
+
+        {/* =========================
+            SUCCESS STATE
+        ========================= */}
         {success ? (
           <div style={styles.successBox}>
             <h2>Application Received ✔</h2>
-            <p>We’ll review your application within 24 hours.</p>
 
-            {leadId && (
-              <p style={styles.meta}>
-                Tracking ID: {leadId}
-              </p>
-            )}
+            <p>
+              Your contractor profile is under review.
+            </p>
+
+            <p style={styles.meta}>
+              Tracking ID: <b>{leadId}</b>
+            </p>
+
+            <p style={styles.nextSteps}>
+              You will be notified once your city access is approved.
+            </p>
           </div>
         ) : (
           <div style={styles.formBox}>
+
+            <h3 style={styles.formTitle}>
+              Apply for Exclusive Access
+            </h3>
+
             <input name="name" placeholder="Name" value={form.name} onChange={handleChange} style={styles.input} />
             <input name="email" placeholder="Email *" value={form.email} onChange={handleChange} style={styles.input} />
             <input name="phone" placeholder="Phone *" value={form.phone} onChange={handleChange} style={styles.input} />
@@ -112,16 +125,35 @@ export default function Page() {
             <button
               onClick={handleSubmit}
               disabled={loading}
-              style={{ ...styles.button, opacity: loading ? 0.7 : 1 }}
+              style={{
+                ...styles.button,
+                opacity: loading ? 0.7 : 1,
+              }}
             >
-              {loading ? "Submitting..." : "Apply For Exclusive Access"}
+              {loading
+                ? "Processing..."
+                : "Get Exclusive Leads Access"}
             </button>
 
             <p style={styles.micro}>
-              ⚡ Limited contractor slots per city
+              ⚡ Limited to 1–3 contractors per city
             </p>
           </div>
         )}
+
+        {/* =========================
+            VALUE STACK SECTION
+        ========================= */}
+        <div style={styles.valueBox}>
+          <h3>Why Contractors Join</h3>
+
+          <ul>
+            <li>🔥 Exclusive city territories</li>
+            <li>💰 Pay-per-lead model ($15–$50)</li>
+            <li>📍 High-intent homeowners only</li>
+            <li>⚡ Instant lead routing system</li>
+          </ul>
+        </div>
       </div>
     </main>
   );

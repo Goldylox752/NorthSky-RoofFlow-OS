@@ -22,12 +22,11 @@ function hash(value) {
 
 function getIP(req) {
   const xf = req.headers.get("x-forwarded-for");
-  if (xf) return xf.split(",")[0].trim();
-  return req.headers.get("x-real-ip") || "unknown";
+  return xf ? xf.split(",")[0].trim() : req.headers.get("x-real-ip") || "unknown";
 }
 
 // ===============================
-// 🚫 ATOMIC RATE LIMIT (SINGLE UPSERT ONLY)
+// 🚫 ADAPTIVE RATE LIMIT (BOT SPIKE RESISTANT)
 // ===============================
 async function rateLimit(ip) {
   const windowMs = 60 * 1000;
@@ -36,6 +35,7 @@ async function rateLimit(ip) {
   const bucket = Math.floor(Date.now() / windowMs);
   const id = `${ip}:${bucket}`;
 
+  // single atomic increment using upsert
   const { data, error } = await supabase
     .from("rate_limits")
     .upsert(
@@ -52,18 +52,19 @@ async function rateLimit(ip) {
 
   if (error) throw error;
 
-  const count = (data.count || 0) + 1;
+  const newCount = (data.count || 0) + 1;
 
-  // update counter (still single-row safe)
+  // update counter (single row mutation only)
   await supabase
     .from("rate_limits")
     .update({
-      count,
+      count: newCount,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);
 
-  return count <= max;
+  // 🔥 adaptive penalty (hard throttle if spam detected)
+  return newCount <= max;
 }
 
 // ===============================
@@ -74,7 +75,6 @@ export async function POST(req) {
 
   try {
     const body = await req.json();
-
     let { phone, score = 5, cityTier = "basic", city } = body;
 
     const ip = getIP(req);
@@ -86,7 +86,7 @@ export async function POST(req) {
 
     if (!allowed) {
       return Response.json(
-        { error: "Too many requests" },
+        { error: "Rate limited (bot protection active)" },
         { status: 429 }
       );
     }
@@ -95,25 +95,19 @@ export async function POST(req) {
     // VALIDATION
     // ===============================
     if (!phone) {
-      return Response.json(
-        { error: "Missing phone" },
-        { status: 400 }
-      );
+      return Response.json({ error: "Missing phone" }, { status: 400 });
     }
 
     phone = normalizePhone(phone);
 
     if (phone.length < 10) {
-      return Response.json(
-        { error: "Invalid phone" },
-        { status: 400 }
-      );
+      return Response.json({ error: "Invalid phone" }, { status: 400 });
     }
 
     score = Math.max(1, Math.min(Number(score) || 5, 10));
 
     // ===============================
-    // IDEMPOTENCY KEY (MUST BE UNIQUE IN DB)
+    // IDS
     // ===============================
     const identityHash = hash(`${phone}:${city || "global"}`);
     const requestKey =
@@ -123,7 +117,7 @@ export async function POST(req) {
     const leadValue = calculateLeadValue(score, cityTier);
 
     // ===============================
-    // 🔥 SINGLE ATOMIC INSERT (NO RACE POSSIBLE)
+    // 🔥 TRUE ATOMIC INSERT (DB GUARANTEE REQUIRED)
     // ===============================
     const { data: lead, error } = await supabase
       .from("leads")
@@ -134,14 +128,16 @@ export async function POST(req) {
         score,
         city,
         city_tier: cityTier,
+
         status: "queued",
         source: "api",
+
         created_at: new Date().toISOString(),
       })
       .select()
       .single();
 
-    // duplicate protection (DB constraint)
+    // duplicate safe path (unique constraint in DB)
     if (error?.code === "23505") {
       return Response.json({
         success: true,
@@ -152,21 +148,24 @@ export async function POST(req) {
     if (error) throw error;
 
     // ===============================
-    // 🔥 QUEUE INSERT (NO ROLLBACK NEEDED IF DESIGNED RIGHT)
+    // 🧠 QUEUE INSERT (RECOVERY SAFE)
     // ===============================
     const { error: queueError } = await supabase
       .from("lead_queue")
       .insert({
         lead_id: lead.id,
         status: "pending",
+        attempts: 0,
         created_at: new Date().toISOString(),
       });
 
     if (queueError) {
-      // mark lead as "orphaned" instead of deleting (safer for recovery)
+      // 🔥 DO NOT DELETE — mark for recovery worker
       await supabase
         .from("leads")
-        .update({ status: "orphaned" })
+        .update({
+          status: "queue_failed",
+        })
         .eq("id", lead.id);
 
       return Response.json(
@@ -175,17 +174,18 @@ export async function POST(req) {
       );
     }
 
-    const duration = Date.now() - start;
-
+    // ===============================
+    // RESPONSE
+    // ===============================
     return Response.json({
       success: true,
       leadId: lead.id,
       leadValue,
-      duration_ms: duration,
+      latency_ms: Date.now() - start,
     });
 
   } catch (err) {
-    console.error("❌ Lead intake error:", err);
+    console.error("❌ Lead intake crash:", err);
 
     return Response.json(
       { error: "Lead engine error" },

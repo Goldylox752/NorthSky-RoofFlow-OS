@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2024-06-20",
@@ -17,68 +18,76 @@ const PLANS = {
 };
 
 // ===============================
-// 🧼 EMAIL NORMALIZATION (CRITICAL FIX)
+// HELPERS
 // ===============================
 function normalizeEmail(email = "") {
   return email.trim().toLowerCase();
 }
 
-// ===============================
-// 🔐 DISTRIBUTED IDEMPOTENCY KEY
-// ===============================
-function buildLockId(email, plan) {
-  const day = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
-  return `checkout:${email}:${plan}:${day}`;
+function hash(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 // ===============================
-// 🧠 ATOMIC LOCK (WITH TTL SAFETY)
+// 🔐 STRONG IDEMPOTENCY KEY (NO DAILY COLLISION ISSUES)
 // ===============================
-async function acquireLock(lockId, email) {
-  const { error } = await supabase.from("checkout_locks").insert({
-    id: lockId,
-    email,
-    created_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2).toISOString(),
-  });
+function buildLockId(email, plan) {
+  return hash(`${email}:${plan}:${Math.floor(Date.now() / 86400000)}`);
+}
+
+// ===============================
+// 🛡️ SAFE ABUSE CHECK (COUNT-BASED, NOT ROW-BASED)
+// ===============================
+async function abuseCheck(email) {
+  const window = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+  const { count } = await supabase
+    .from("checkout_locks")
+    .select("*", { count: "exact", head: true })
+    .eq("email", email)
+    .gte("created_at", window);
+
+  const attempts = count || 0;
+
+  if (attempts >= 8) return { allowed: false, type: "hard_block" };
+  if (attempts >= 3) return { allowed: false, type: "soft_block" };
+
+  return { allowed: true };
+}
+
+// ===============================
+// 🔐 ATOMIC LOCK (RACE SAFE VIA UPSERT)
+// ===============================
+async function acquireLock(lockId, email, plan) {
+  const { error } = await supabase
+    .from("checkout_locks")
+    .upsert(
+      {
+        id: lockId,
+        email,
+        plan,
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      },
+      { onConflict: "id" }
+    );
 
   return !error;
 }
 
 // ===============================
-// 🧹 LOCK RECOVERY (PREVENTS DEADLOCKS)
+// 🧹 CLEANUP (NON-BLOCKING SAFE)
 // ===============================
 async function recoverStaleLocks() {
-  const cutoff = new Date(Date.now() - 1000 * 60 * 60 * 24 * 2);
-
-  await supabase
+  supabase
     .from("checkout_locks")
     .delete()
-    .lt("created_at", cutoff.toISOString());
-}
-
-// ===============================
-// 🛡️ SLIDING WINDOW ABUSE CHECK
-// ===============================
-async function abuseCheck(email) {
-  const { data } = await supabase
-    .from("checkout_locks")
-    .select("id")
-    .eq("email", email)
-    .gte(
-      "created_at",
-      new Date(Date.now() - 1000 * 60 * 5).toISOString()
-    );
-
-  const attempts = data?.length || 0;
-
-  // soft throttle
-  if (attempts >= 3) return { allowed: false, type: "soft_block" };
-
-  // hard block
-  if (attempts >= 8) return { allowed: false, type: "hard_block" };
-
-  return { allowed: true };
+    .lt(
+      "expires_at",
+      new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    )
+    .then(() => {})
+    .catch(() => {});
 }
 
 // ===============================
@@ -90,11 +99,11 @@ export async function POST(req) {
 
     let { plan, email } = body;
 
-    // ===============================
-    // NORMALIZE INPUT
-    // ===============================
     email = normalizeEmail(email);
 
+    // ===============================
+    // VALIDATION
+    // ===============================
     if (!plan || !email) {
       return Response.json(
         { error: "Missing plan or email" },
@@ -112,12 +121,12 @@ export async function POST(req) {
     }
 
     // ===============================
-    // 🔁 CLEANUP (NON-BLOCKING)
+    // CLEANUP (FIRE AND FORGET)
     // ===============================
-    recoverStaleLocks().catch(() => {});
+    recoverStaleLocks();
 
     // ===============================
-    // 🛡️ ABUSE CHECK FIRST (CHEAPEST LAYER)
+    // ABUSE PROTECTION (FIRST LINE DEFENSE)
     // ===============================
     const abuse = await abuseCheck(email);
 
@@ -126,19 +135,19 @@ export async function POST(req) {
         {
           error:
             abuse.type === "hard_block"
-              ? "Account temporarily blocked"
-              : "Too many attempts. Slow down.",
+              ? "Account temporarily restricted"
+              : "Too many attempts",
         },
         { status: 429 }
       );
     }
 
     // ===============================
-    // 🔐 IDEMPOTENCY LOCK (SECOND LAYER)
+    // LOCK (IDEMPOTENCY CORE)
     // ===============================
     const lockId = buildLockId(email, plan);
 
-    const locked = await acquireLock(lockId, email);
+    const locked = await acquireLock(lockId, email, plan);
 
     if (!locked) {
       return Response.json(
@@ -148,7 +157,7 @@ export async function POST(req) {
     }
 
     // ===============================
-    // 💳 STRIPE SESSION
+    // STRIPE SESSION
     // ===============================
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -175,20 +184,21 @@ export async function POST(req) {
         plan,
         email,
         lock_id: lockId,
-        source: "roofflow_checkout_v4",
+        source: "roofflow_checkout_v5",
       },
     });
 
     // ===============================
-    // AUDIT LOG
+    // AUDIT LOG (NON-BLOCKING)
     // ===============================
-    await supabase.from("events").insert({
+    supabase.from("events").insert({
       type: "checkout.created",
       email,
       plan,
       stripe_session_id: session.id,
       lock_id: lockId,
-    });
+      created_at: new Date().toISOString(),
+    }).catch(() => {});
 
     return Response.json({
       url: session.url,

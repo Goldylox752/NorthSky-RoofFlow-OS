@@ -13,7 +13,7 @@ const supabase = createClient(
 );
 
 // ===============================
-// 🔐 EVENT LOCK WITH TIMEOUT SAFETY
+// 🔐 LOCK EVENT (RACE SAFE)
 // ===============================
 async function lockEvent(eventId, type) {
   const { error } = await supabase.from("stripe_events").insert({
@@ -28,43 +28,46 @@ async function lockEvent(eventId, type) {
 }
 
 // ===============================
-// 🔁 RECOVERY: UNSTUCK EVENTS (CRITICAL UPGRADE)
+// 🔁 AUTO RECOVERY (NOW EXECUTED)
 // ===============================
 async function recoverStuckEvents() {
-  const cutoff = new Date(Date.now() - 1000 * 60 * 5); // 5 min
+  const cutoff = new Date(Date.now() - 1000 * 60 * 5);
 
   await supabase
     .from("stripe_events")
-    .update({ status: "failed", error: "timeout_recovered" })
+    .update({
+      status: "failed",
+      error: "auto_recovered_timeout",
+    })
     .eq("status", "processing")
     .lt("locked_at", cutoff.toISOString());
 }
 
 // ===============================
-// MARKERS
+// 🧠 SAFE FINALIZER (ALWAYS RUNS)
 // ===============================
-async function markSuccess(eventId) {
-  await supabase
-    .from("stripe_events")
-    .update({
-      status: "completed",
-      processed_at: new Date().toISOString(),
-    })
-    .eq("id", eventId);
+async function finalizeEvent(eventId, success, error = null) {
+  if (success) {
+    await supabase
+      .from("stripe_events")
+      .update({
+        status: "completed",
+        processed_at: new Date().toISOString(),
+      })
+      .eq("id", eventId);
+  } else {
+    await supabase
+      .from("stripe_events")
+      .update({
+        status: "failed",
+        error: error?.message || "unknown_error",
+      })
+      .eq("id", eventId);
+  }
 }
 
-async function markFailed(eventId, error) {
-  await supabase
-    .from("stripe_events")
-    .update({
-      status: "failed",
-      error: error?.message || "unknown error",
-    })
-    .eq("id", eventId);
-}
-
 // ===============================
-// CITY UPDATE (UNCHANGED BUT SAFE)
+// CITY UPDATE (UNCHANGED)
 // ===============================
 async function updateCity(city, contractorId, cityRow) {
   const existing = cityRow.active_contractors || [];
@@ -86,7 +89,99 @@ async function updateCity(city, contractorId, cityRow) {
 }
 
 // ===============================
-// MAIN WEBHOOK
+// EVENT ROUTER (ISOLATED LOGIC)
+// ===============================
+async function handleEvent(event) {
+  switch (event.type) {
+
+    case "checkout.session.completed": {
+      const session = event.data.object;
+
+      const email = session.customer_details?.email;
+      const customerId = session.customer;
+      const subscriptionId = session.subscription;
+      const city = session.metadata?.city;
+
+      if (!email) return;
+
+      const { data: contractor, error } = await supabase
+        .from("contractors")
+        .upsert(
+          {
+            email,
+            stripe_customer_id: customerId,
+            stripe_subscription_id: subscriptionId,
+            active: true,
+            plan: city ? "city_owner" : "pro",
+            city: city || null,
+          },
+          { onConflict: "email" }
+        )
+        .select()
+        .single();
+
+      if (error || !contractor) {
+        throw new Error("Contractor upsert failed");
+      }
+
+      if (city) {
+        const { data: cityRow } = await supabase
+          .from("cities")
+          .select("*")
+          .eq("city", city)
+          .single();
+
+        if (cityRow) {
+          await updateCity(city, contractor.id, cityRow);
+        }
+
+        await supabase
+          .from("city_intents")
+          .update({ status: "confirmed" })
+          .eq("city", city)
+          .eq("contractorId", contractor.id);
+      }
+
+      await supabase.from("events").insert({
+        type: "stripe.checkout.completed",
+        contractor_id: contractor.id,
+        payload: session,
+      });
+
+      break;
+    }
+
+    case "customer.subscription.updated": {
+      const sub = event.data.object;
+
+      await supabase
+        .from("contractors")
+        .update({
+          active: sub.status === "active",
+        })
+        .eq("stripe_customer_id", sub.customer);
+
+      break;
+    }
+
+    case "customer.subscription.deleted": {
+      const sub = event.data.object;
+
+      await supabase
+        .from("contractors")
+        .update({
+          active: false,
+          plan: "free",
+        })
+        .eq("stripe_customer_id", sub.customer);
+
+      break;
+    }
+  }
+}
+
+// ===============================
+// MAIN WEBHOOK (HARDENED)
 // ===============================
 export async function POST(req) {
   let event;
@@ -96,7 +191,12 @@ export async function POST(req) {
     const sig = req.headers.get("stripe-signature");
 
     // ===============================
-    // VERIFY STRIPE SIGNATURE
+    // AUTO RECOVERY BEFORE PROCESSING
+    // ===============================
+    await recoverStuckEvents();
+
+    // ===============================
+    // VERIFY STRIPE
     // ===============================
     event = stripe.webhooks.constructEvent(
       body,
@@ -105,7 +205,7 @@ export async function POST(req) {
     );
 
     // ===============================
-    // 🔐 IDEMPOTENCY + LOCK
+    // LOCK (DISTRIBUTED SAFE)
     // ===============================
     const locked = await lockEvent(event.id, event.type);
 
@@ -114,108 +214,14 @@ export async function POST(req) {
     }
 
     // ===============================
-    // PROCESS EVENT
+    // PROCESS
     // ===============================
-    switch (event.type) {
-
-      // =====================================================
-      // CHECKOUT COMPLETE
-      // =====================================================
-      case "checkout.session.completed": {
-        const session = event.data.object;
-
-        const email = session.customer_details?.email;
-        const customerId = session.customer;
-        const subscriptionId = session.subscription;
-        const city = session.metadata?.city;
-
-        if (!email) break;
-
-        const { data: contractor, error } = await supabase
-          .from("contractors")
-          .upsert(
-            {
-              email,
-              stripe_customer_id: customerId,
-              stripe_subscription_id: subscriptionId,
-              active: true,
-              plan: city ? "city_owner" : "pro",
-              city: city || null,
-            },
-            { onConflict: "email" }
-          )
-          .select()
-          .single();
-
-        if (error || !contractor) {
-          throw new Error("Contractor upsert failed");
-        }
-
-        if (city) {
-          const { data: cityRow } = await supabase
-            .from("cities")
-            .select("*")
-            .eq("city", city)
-            .single();
-
-          if (cityRow) {
-            await updateCity(city, contractor.id, cityRow);
-          }
-
-          await supabase
-            .from("city_intents")
-            .update({ status: "confirmed" })
-            .eq("city", city)
-            .eq("contractorId", contractor.id);
-        }
-
-        await supabase.from("events").insert({
-          type: "stripe.checkout.completed",
-          contractor_id: contractor.id,
-          payload: session,
-        });
-
-        break;
-      }
-
-      // =====================================================
-      // SUBSCRIPTION UPDATED
-      // =====================================================
-      case "customer.subscription.updated": {
-        const sub = event.data.object;
-
-        await supabase
-          .from("contractors")
-          .update({
-            active: sub.status === "active",
-          })
-          .eq("stripe_customer_id", sub.customer);
-
-        break;
-      }
-
-      // =====================================================
-      // SUBSCRIPTION CANCELLED
-      // =====================================================
-      case "customer.subscription.deleted": {
-        const sub = event.data.object;
-
-        await supabase
-          .from("contractors")
-          .update({
-            active: false,
-            plan: "free",
-          })
-          .eq("stripe_customer_id", sub.customer);
-
-        break;
-      }
-    }
+    await handleEvent(event);
 
     // ===============================
-    // SUCCESS MARK
+    // FINALIZE SUCCESS
     // ===============================
-    await markSuccess(event.id);
+    await finalizeEvent(event.id, true);
 
     return Response.json({ received: true });
 
@@ -223,7 +229,7 @@ export async function POST(req) {
     console.error("Webhook crash:", err);
 
     if (event?.id) {
-      await markFailed(event.id, err);
+      await finalizeEvent(event.id, false, err);
     }
 
     return Response.json(

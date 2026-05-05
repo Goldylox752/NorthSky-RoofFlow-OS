@@ -21,41 +21,53 @@ function hash(value) {
 }
 
 function getIP(req) {
-  return (
-    req.headers.get("x-forwarded-for")?.split(",")[0] ||
-    req.headers.get("x-real-ip") ||
-    "unknown"
-  );
+  const xf = req.headers.get("x-forwarded-for");
+  if (xf) return xf.split(",")[0].trim();
+  return req.headers.get("x-real-ip") || "unknown";
 }
 
 // ===============================
-// 🚫 STRONG RATE LIMIT (COUNT BASED)
+// 🔐 ATOMIC RATE LIMIT (UPSERT COUNTER)
 // ===============================
 async function rateLimit(ip) {
   const windowMs = 60 * 1000;
   const max = 30;
 
-  const now = Date.now();
-  const windowStart = new Date(now - windowMs).toISOString();
+  const bucket = Math.floor(Date.now() / windowMs);
+  const id = `${ip}:${bucket}`;
 
-  const { count } = await supabase
+  const { data, error } = await supabase
     .from("rate_limits")
-    .select("*", { count: "exact", head: true })
-    .eq("ip", ip)
-    .gte("created_at", windowStart);
+    .upsert(
+      {
+        id,
+        ip,
+        count: 1,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    )
+    .select()
+    .single();
 
-  if (count >= max) return false;
+  if (error) throw error;
 
-  await supabase.from("rate_limits").insert({
-    ip,
-    created_at: new Date().toISOString(),
-  });
+  // increment (safe because same row)
+  const { data: updated } = await supabase
+    .from("rate_limits")
+    .update({
+      count: (data.count || 1) + 1,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select()
+    .single();
 
-  return true;
+  return updated.count <= max;
 }
 
 // ===============================
-// 🔁 ATOMIC IDEMPOTENCY (NO RACE)
+// 🔁 ATOMIC INSERT
 // ===============================
 async function insertLeadAtomic(payload) {
   const { data, error } = await supabase
@@ -64,8 +76,7 @@ async function insertLeadAtomic(payload) {
     .select()
     .single();
 
-  // unique constraint hit = duplicate
-  if (error && error.code === "23505") {
+  if (error?.code === "23505") {
     return { duplicate: true };
   }
 
@@ -86,6 +97,13 @@ export async function POST(req) {
     let { phone, score = 5, cityTier = "basic", city } = body;
 
     const ip = getIP(req);
+
+    // ===============================
+    // REQUEST IDEMPOTENCY (OPTIONAL BUT STRONG)
+    // ===============================
+    const requestKey =
+      req.headers.get("x-idempotency-key") ||
+      hash(JSON.stringify(body));
 
     // ===============================
     // RATE LIMIT
@@ -118,9 +136,6 @@ export async function POST(req) {
       );
     }
 
-    // ===============================
-    // SAFE SCORING
-    // ===============================
     score = Math.max(1, Math.min(Number(score) || 5, 10));
 
     // ===============================
@@ -128,13 +143,10 @@ export async function POST(req) {
     // ===============================
     const identityHash = hash(`${phone}:${city || "global"}`);
 
-    // ===============================
-    // VALUE CALCULATION
-    // ===============================
     const leadValue = calculateLeadValue(score, cityTier);
 
     // ===============================
-    // ATOMIC INSERT (NO DUPES EVER)
+    // INSERT LEAD
     // ===============================
     const result = await insertLeadAtomic({
       phone,
@@ -142,8 +154,9 @@ export async function POST(req) {
       score,
       city,
       city_tier: cityTier,
-      status: "queued", // 🔥 NOT "new" anymore
+      status: "queued",
       source: "api",
+      request_key: requestKey,
       created_at: new Date().toISOString(),
     });
 
@@ -157,19 +170,33 @@ export async function POST(req) {
     const lead = result.lead;
 
     // ===============================
-    // QUEUE PUSH (DECOUPLED SYSTEM)
+    // QUEUE INSERT (MUST SUCCEED)
     // ===============================
-    await supabase.from("lead_queue").insert({
-      lead_id: lead.id,
-      status: "pending",
-      created_at: new Date().toISOString(),
-    });
+    const { error: queueError } = await supabase
+      .from("lead_queue")
+      .insert({
+        lead_id: lead.id,
+        status: "pending",
+        created_at: new Date().toISOString(),
+      });
+
+    // 🔥 CRITICAL: rollback if queue fails
+    if (queueError) {
+      console.error("Queue insert failed, rolling back:", queueError);
+
+      await supabase
+        .from("leads")
+        .delete()
+        .eq("id", lead.id);
+
+      return Response.json(
+        { error: "Queue failure" },
+        { status: 500 }
+      );
+    }
 
     const duration = Date.now() - start;
 
-    // ===============================
-    // RESPONSE
-    // ===============================
     return Response.json({
       success: true,
       leadId: lead.id,

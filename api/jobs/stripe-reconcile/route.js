@@ -13,51 +13,59 @@ const supabase = createClient(
 );
 
 // ===============================
-// 🔁 SYNC CONTRACTOR SUBSCRIPTIONS
+// 🔁 SYNC CONTRACTOR SUBSCRIPTIONS (PAGINATED)
 // ===============================
 async function syncSubscriptions() {
-  const subscriptions = await stripe.subscriptions.list({
-    limit: 100,
-    status: "all",
-  });
+  let hasMore = true;
+  let startingAfter = null;
 
-  for (const sub of subscriptions.data) {
-    const customerId = sub.customer;
+  while (hasMore) {
+    const res = await stripe.subscriptions.list({
+      limit: 100,
+      status: "all",
+      starting_after: startingAfter || undefined,
+    });
 
-    const { data: contractor } = await supabase
-      .from("contractors")
-      .select("*")
-      .eq("stripe_customer_id", customerId)
-      .maybeSingle();
+    for (const sub of res.data) {
+      const customerId = sub.customer;
 
-    if (!contractor) continue;
+      const { data: contractor } = await supabase
+        .from("contractors")
+        .select("id, active, stripe_subscription_id")
+        .eq("stripe_customer_id", customerId)
+        .maybeSingle();
 
-    const shouldBeActive =
-      sub.status === "active" || sub.status === "trialing";
+      if (!contractor) continue;
 
-    const dbMatches =
-      contractor.active === shouldBeActive &&
-      contractor.stripe_subscription_id === sub.id;
+      const shouldBeActive =
+        sub.status === "active" || sub.status === "trialing";
 
-    if (dbMatches) continue;
+      const dbMatches =
+        contractor.active === shouldBeActive &&
+        contractor.stripe_subscription_id === sub.id;
 
-    // 🔧 FIX DRIFT
-    await supabase
-      .from("contractors")
-      .update({
-        active: shouldBeActive,
-        stripe_subscription_id: sub.id,
-      })
-      .eq("id", contractor.id);
+      if (dbMatches) continue;
 
-    console.log(
-      `🔄 Reconciled contractor ${contractor.id} → ${shouldBeActive ? "active" : "inactive"}`
-    );
+      await supabase
+        .from("contractors")
+        .update({
+          active: shouldBeActive,
+          stripe_subscription_id: sub.id,
+        })
+        .eq("id", contractor.id);
+
+      console.log(
+        `🔄 Reconciled contractor ${contractor.id} → ${shouldBeActive}`
+      );
+    }
+
+    hasMore = res.has_more;
+    startingAfter = res.data.at(-1)?.id;
   }
 }
 
 // ===============================
-// 💳 SYNC LATEST CHECKOUTS (OPTIONAL SAFETY NET)
+// 💳 SYNC RECENT CHECKOUTS
 // ===============================
 async function syncRecentCheckouts() {
   const sessions = await stripe.checkout.sessions.list({
@@ -72,12 +80,11 @@ async function syncRecentCheckouts() {
 
     const { data: contractor } = await supabase
       .from("contractors")
-      .select("*")
+      .select("id")
       .eq("email", email)
       .maybeSingle();
 
     if (!contractor) {
-      // 🧠 self-heal missing webhook insert
       await supabase.from("contractors").insert({
         email,
         stripe_customer_id: session.customer,
@@ -91,38 +98,52 @@ async function syncRecentCheckouts() {
 }
 
 // ===============================
-// 🧹 OPTIONAL: CLEAN STRIPE EVENT DRIFT
+// 🧹 EVENT DRIFT CHECK
 // ===============================
 async function reconcileEvents() {
   const { data: failedEvents } = await supabase
     .from("stripe_events")
-    .select("*")
+    .select("id")
     .eq("status", "failed")
     .limit(50);
 
   for (const event of failedEvents || []) {
-    console.log(`⚠️ Retry needed for event ${event.id}`);
-    // optional: reprocess logic here later
+    console.log(`⚠️ Needs retry: ${event.id}`);
+    // future: reprocess queue
   }
 }
 
 // ===============================
-// MAIN JOB
+// 🧠 MAIN RECONCILIATION JOB
 // ===============================
-export async function GET() {
+export async function GET(req) {
+  // ===============================
+  // 🔐 VERCEL CRON AUTH (CORRECT WAY)
+  // ===============================
+  const isCron = req.headers.get("x-vercel-cron");
+
+  if (!isCron) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const start = Date.now();
+
   try {
-    console.log("🚀 Stripe reconciliation job started");
+    console.log("🚀 Stripe reconciliation started");
 
     await syncSubscriptions();
     await syncRecentCheckouts();
     await reconcileEvents();
 
-    console.log("✅ Stripe reconciliation complete");
+    const duration = Date.now() - start;
+
+    console.log(`✅ Reconciliation complete (${duration}ms)`);
 
     return Response.json({
       ok: true,
-      message: "reconciled",
+      duration_ms: duration,
     });
+
   } catch (err) {
     console.error("❌ Reconciliation error:", err);
 

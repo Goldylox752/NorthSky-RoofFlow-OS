@@ -6,30 +6,31 @@ export default function Pricing() {
   const [loading, setLoading] = useState(null);
 
   const subscribe = async (priceId) => {
+    if (loading) return;
+
     try {
       setLoading(priceId);
 
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           priceId,
           mode: "subscription",
+          source: "pricing_page",
         }),
       });
 
       const data = await res.json();
 
-      if (data?.url) {
-        window.location.href = data.url;
-      } else {
-        alert("Checkout failed. Try again.");
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.error || "Checkout failed");
       }
+
+      window.location.href = data.url;
     } catch (err) {
       console.error(err);
-      alert("Something went wrong.");
+      alert("Checkout failed. Try again.");
     } finally {
       setLoading(null);
     }
@@ -37,60 +38,54 @@ export default function Pricing() {
 
   const plans = [
     {
-      name: "Starter",
+      name: "Starter Territory",
       price: "$499 / month",
-      desc: "5–10 qualified requests",
+      desc: "5–10 exclusive roofing opportunities",
       id: "price_STARTER_ID",
-      cta: "Secure Territory",
+      cta: "Lock Territory",
       highlight: false,
     },
     {
-      name: "Growth",
+      name: "Growth Territory",
       price: "$999 / month",
-      desc: "15–30 booked opportunities",
+      desc: "15–30 high-intent homeowners",
       id: "price_GROWTH_ID",
-      cta: "Get More Jobs",
+      cta: "Scale Leads",
       highlight: true,
     },
     {
-      name: "Domination",
+      name: "Elite Exclusivity",
       price: "$1,999 / month",
-      desc: "Full territory exclusivity",
+      desc: "Full city control + priority routing",
       id: "price_DOMINATION_ID",
-      cta: "Lock Market",
+      cta: "Own Market",
       highlight: false,
     },
   ];
 
   return (
     <main className="bg-white text-gray-900">
-      {/* URGENCY */}
+
+      {/* SYSTEM STATUS BAR (ties into your backend reality) */}
       <div className="bg-black text-white text-center py-3 text-sm">
-        ⚠️ Only 1 contractor per territory — real-time availability
+        ⚡ Live routing active — leads are assigned in real-time (1 contractor per city enforced)
       </div>
 
-      {/* HEADER */}
+      {/* HERO */}
       <section className="max-w-5xl mx-auto px-6 py-16 text-center">
         <h1 className="text-4xl font-bold">
           Exclusive Roofing Leads by Territory
         </h1>
 
         <p className="mt-4 text-gray-600">
-          No shared leads. No bidding wars. Just homeowners ready to buy.
+          No shared leads. No bidding wars. Your routing system assigns homeowners to a single contractor per city.
         </p>
 
         <div className="mt-6 text-sm text-gray-500 space-y-1">
-          <p>🔥 Avg ROI: 3–7x per closed job</p>
-          <p>⚡ Instant lead delivery</p>
-          <p>📍 One contractor per area</p>
+          <p>🔥 AI-qualified homeowners only</p>
+          <p>⚡ Instant routing engine (no delays)</p>
+          <p>📍 Territory lock enforced at database level</p>
         </div>
-      </section>
-
-      {/* SOCIAL PROOF */}
-      <section className="max-w-5xl mx-auto px-6 pb-6 text-center">
-        <p className="text-sm text-gray-500">
-          Used by contractors scaling consistent high-ticket roofing jobs
-        </p>
       </section>
 
       {/* PRICING */}
@@ -121,13 +116,11 @@ export default function Pricing() {
                   : "bg-black text-white hover:opacity-90"
               }`}
             >
-              {loading === plan.id
-                ? "Processing..."
-                : `${plan.cta} →`}
+              {loading === plan.id ? "Processing..." : `${plan.cta} →`}
             </button>
 
             <p className="text-xs text-gray-500 mt-3">
-              Cancel anytime. Keep all leads generated.
+              Billing is locked to your territory. Cancelling removes routing priority.
             </p>
           </div>
         ))}
@@ -136,11 +129,11 @@ export default function Pricing() {
       {/* PAY PER LEAD */}
       <section className="max-w-5xl mx-auto px-6 pb-20 text-center">
         <h2 className="text-2xl font-bold">
-          Not ready for a subscription?
+          Or Buy Individual High-Intent Leads
         </h2>
 
         <p className="text-gray-600 mt-2">
-          Buy individual high-intent leads. No commitment.
+          One-off leads pulled from the same routing engine.
         </p>
 
         <div className="grid md:grid-cols-3 gap-6 mt-10 text-left">
@@ -148,7 +141,7 @@ export default function Pricing() {
             <h3 className="font-bold">Hot Lead</h3>
             <p className="text-gray-600">$49</p>
             <p className="text-xs text-gray-500 mt-2">
-              Recent inquiry with strong intent
+              Newly submitted homeowner request
             </p>
           </div>
 
@@ -156,7 +149,7 @@ export default function Pricing() {
             <h3 className="font-bold">Verified Lead</h3>
             <p className="text-gray-600">$99</p>
             <p className="text-xs text-gray-500 mt-2">
-              Confirmed contact + project need
+              Phone + intent validated
             </p>
           </div>
 
@@ -164,7 +157,7 @@ export default function Pricing() {
             <h3 className="font-bold">Exclusive Lead</h3>
             <p className="text-gray-600">$149</p>
             <p className="text-xs text-gray-500 mt-2">
-              Sold to one contractor only
+              Locked to one contractor only
             </p>
           </div>
         </div>
@@ -173,7 +166,7 @@ export default function Pricing() {
           onClick={() => (window.location.href = "/buy-leads")}
           className="mt-8 bg-gray-900 text-white px-6 py-3 rounded-lg hover:opacity-90 transition"
         >
-          Browse Single Leads →
+          Browse Live Leads →
         </button>
       </section>
     </main>

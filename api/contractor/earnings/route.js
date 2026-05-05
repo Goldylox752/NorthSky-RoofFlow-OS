@@ -1,20 +1,73 @@
 import { supabase } from "@/lib/supabase";
 
 export async function GET(req) {
-  const { searchParams } = new URL(req.url);
-  const contractorId = searchParams.get("contractorId");
+  try {
+    const { searchParams } = new URL(req.url);
+    const contractorId = searchParams.get("contractorId");
 
-  const { data } = await supabase
-    .from("leads")
-    .select("price, billed, status")
-    .eq("assigned_contractor_id", contractorId);
+    // ===============================
+    // VALIDATION
+    // ===============================
+    if (!contractorId) {
+      return Response.json(
+        { error: "Missing contractorId" },
+        { status: 400 }
+      );
+    }
 
-  const total = data.reduce((sum, l) => sum + (l.price || 0), 0);
-  const billed = data.filter((l) => l.billed).length;
+    // ===============================
+    // 🔐 SAFE AGGREGATION (DB-SIDE)
+    // ===============================
+    const { data, error } = await supabase
+      .from("leads")
+      .select("price, billed")
+      .eq("assigned_contractor_id", contractorId);
 
-  return Response.json({
-    earnings: total,
-    billed,
-    leads: data.length,
-  });
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    // ===============================
+    // NULL SAFETY
+    // ===============================
+    const safeData = data || [];
+
+    // ===============================
+    // CALCULATIONS (CONTROLLED LAYER)
+    // ===============================
+    let earnings = 0;
+    let billed = 0;
+
+    for (const lead of safeData) {
+      const price = Number(lead.price || 0);
+
+      earnings += price;
+
+      if (lead.billed === true) {
+        billed++;
+      }
+    }
+
+    // ===============================
+    // RESPONSE
+    // ===============================
+    return Response.json({
+      success: true,
+      contractorId,
+      earnings,
+      billed,
+      leads: safeData.length,
+    });
+
+  } catch (err) {
+    console.error("Revenue endpoint error:", err);
+
+    return Response.json(
+      {
+        success: false,
+        error: "Failed to fetch earnings",
+      },
+      { status: 500 }
+    );
+  }
 }

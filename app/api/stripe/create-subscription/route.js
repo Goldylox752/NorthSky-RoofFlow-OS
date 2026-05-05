@@ -17,44 +17,48 @@ const PLANS = {
 };
 
 // ===============================
-// 🔐 DISTRIBUTED IDEMPOTENCY KEY (IMPROVED)
+// 🧼 EMAIL NORMALIZATION (CRITICAL FIX)
+// ===============================
+function normalizeEmail(email = "") {
+  return email.trim().toLowerCase();
+}
+
+// ===============================
+// 🔐 DISTRIBUTED IDEMPOTENCY KEY
 // ===============================
 function buildLockId(email, plan) {
-  const hour = Math.floor(Date.now() / (1000 * 60 * 60));
-  const day = Math.floor(hour / 24);
-
-  // prevents abuse + allows retry recovery
+  const day = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
   return `checkout:${email}:${plan}:${day}`;
 }
 
 // ===============================
-// 🧠 ATOMIC LOCK (RACE SAFE + REPLAY SAFE)
+// 🧠 ATOMIC LOCK (WITH TTL SAFETY)
 // ===============================
 async function acquireLock(lockId, email) {
   const { error } = await supabase.from("checkout_locks").insert({
     id: lockId,
     email,
     created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2).toISOString(),
   });
 
   return !error;
 }
 
 // ===============================
-// 🧹 SAFE CLEANUP (NON-BLOCKING)
+// 🧹 LOCK RECOVERY (PREVENTS DEADLOCKS)
 // ===============================
-async function cleanupOldLocks() {
+async function recoverStaleLocks() {
+  const cutoff = new Date(Date.now() - 1000 * 60 * 60 * 24 * 2);
+
   await supabase
     .from("checkout_locks")
     .delete()
-    .lt(
-      "created_at",
-      new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString()
-    );
+    .lt("created_at", cutoff.toISOString());
 }
 
 // ===============================
-// 🛡️ BASIC ABUSE GUARD (LIGHTWEIGHT BOT FILTER)
+// 🛡️ SLIDING WINDOW ABUSE CHECK
 // ===============================
 async function abuseCheck(email) {
   const { data } = await supabase
@@ -63,11 +67,18 @@ async function abuseCheck(email) {
     .eq("email", email)
     .gte(
       "created_at",
-      new Date(Date.now() - 1000 * 60 * 10).toISOString()
+      new Date(Date.now() - 1000 * 60 * 5).toISOString()
     );
 
-  // too many attempts in 10 min = blocked
-  return (data?.length || 0) < 5;
+  const attempts = data?.length || 0;
+
+  // soft throttle
+  if (attempts >= 3) return { allowed: false, type: "soft_block" };
+
+  // hard block
+  if (attempts >= 8) return { allowed: false, type: "hard_block" };
+
+  return { allowed: true };
 }
 
 // ===============================
@@ -75,11 +86,15 @@ async function abuseCheck(email) {
 // ===============================
 export async function POST(req) {
   try {
-    const { plan, email } = await req.json();
+    const body = await req.json();
+
+    let { plan, email } = body;
 
     // ===============================
-    // VALIDATION
+    // NORMALIZE INPUT
     // ===============================
+    email = normalizeEmail(email);
+
     if (!plan || !email) {
       return Response.json(
         { error: "Missing plan or email" },
@@ -97,19 +112,29 @@ export async function POST(req) {
     }
 
     // ===============================
-    // 🛡️ ABUSE PROTECTION LAYER
+    // 🔁 CLEANUP (NON-BLOCKING)
     // ===============================
-    const allowed = await abuseCheck(email);
+    recoverStaleLocks().catch(() => {});
 
-    if (!allowed) {
+    // ===============================
+    // 🛡️ ABUSE CHECK FIRST (CHEAPEST LAYER)
+    // ===============================
+    const abuse = await abuseCheck(email);
+
+    if (!abuse.allowed) {
       return Response.json(
-        { error: "Too many attempts. Try later." },
+        {
+          error:
+            abuse.type === "hard_block"
+              ? "Account temporarily blocked"
+              : "Too many attempts. Slow down.",
+        },
         { status: 429 }
       );
     }
 
     // ===============================
-    // 🔐 IDEMPOTENCY LOCK
+    // 🔐 IDEMPOTENCY LOCK (SECOND LAYER)
     // ===============================
     const lockId = buildLockId(email, plan);
 
@@ -123,7 +148,7 @@ export async function POST(req) {
     }
 
     // ===============================
-    // 💳 STRIPE SESSION CREATION
+    // 💳 STRIPE SESSION
     // ===============================
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -146,19 +171,16 @@ export async function POST(req) {
       success_url: `${process.env.FRONTEND_URL}/success?plan=${plan}`,
       cancel_url: `${process.env.FRONTEND_URL}/cancel`,
 
-      // ===============================
-      // 🔗 STRIPE WEBHOOK CORRELATION
-      // ===============================
       metadata: {
         plan,
         email,
         lock_id: lockId,
-        source: "roofflow_checkout_v3",
+        source: "roofflow_checkout_v4",
       },
     });
 
     // ===============================
-    // 📊 AUDIT LOG (NON-CRITICAL)
+    // AUDIT LOG
     // ===============================
     await supabase.from("events").insert({
       type: "checkout.created",
@@ -167,11 +189,6 @@ export async function POST(req) {
       stripe_session_id: session.id,
       lock_id: lockId,
     });
-
-    // ===============================
-    // BACKGROUND MAINTENANCE (NON-BLOCKING)
-    // ===============================
-    cleanupOldLocks().catch(() => {});
 
     return Response.json({
       url: session.url,

@@ -13,15 +13,52 @@ const supabase = createClient(
 );
 
 // ===============================
-// ATOMIC IDEMPOTENCY INSERT
+// ATOMIC IDEMPOTENCY CHECK (SAFE)
 // ===============================
-async function markProcessed(eventId) {
-  const { error } = await supabase
+async function isProcessed(eventId) {
+  const { data } = await supabase
     .from("stripe_events")
-    .insert({ id: eventId });
+    .select("id")
+    .eq("id", eventId)
+    .maybeSingle();
 
-  // If duplicate → ignore safely
+  return !!data;
+}
+
+// ===============================
+// MARK EVENT (ATOMIC INSERT)
+// ===============================
+async function markProcessed(eventId, type) {
+  const { error } = await supabase.from("stripe_events").insert({
+    id: eventId,
+    type,
+    processed_at: new Date().toISOString(),
+  });
+
+  // duplicate insert = already processed
   return !error;
+}
+
+// ===============================
+// SAFE CITY UPDATE (NO RACE OVERWRITE)
+// ===============================
+async function updateCity(city, contractorId, cityRow) {
+  const existing = cityRow.active_contractors || [];
+
+  if (existing.includes(contractorId)) return;
+
+  const updated = [...existing, contractorId];
+
+  await supabase
+    .from("cities")
+    .update({
+      active_contractors: updated,
+      status:
+        updated.length >= cityRow.max_contractors
+          ? "sold"
+          : "active",
+    })
+    .eq("city", city);
 }
 
 // ===============================
@@ -48,11 +85,11 @@ export async function POST(req) {
     }
 
     // ===============================
-    // IDEMPOTENCY (DB-ATOMIC)
+    // IDEMPOTENCY GUARD (FAST EXIT)
     // ===============================
-    const inserted = await markProcessed(event.id);
+    const already = await isProcessed(event.id);
 
-    if (!inserted) {
+    if (already) {
       return Response.json({
         received: true,
         duplicate: true,
@@ -65,7 +102,7 @@ export async function POST(req) {
     switch (event.type) {
 
       // =====================================================
-      // CHECKOUT COMPLETE
+      // 💳 PAYMENT SUCCESS
       // =====================================================
       case "checkout.session.completed": {
         const session = event.data.object;
@@ -75,40 +112,36 @@ export async function POST(req) {
         const subscriptionId = session.subscription;
         const city = session.metadata?.city;
 
-        if (!email) {
-          console.warn("Missing email in session:", session.id);
+        if (!email) break;
+
+        // ===============================
+        // UPSERT CONTRACTOR (SAFE)
+        // ===============================
+        const { data: contractor, error } = await supabase
+          .from("contractors")
+          .upsert(
+            {
+              email,
+              stripe_customer_id: customerId,
+              stripe_subscription_id: subscriptionId,
+              active: true,
+              plan: city ? "city_owner" : "pro",
+              city: city || null,
+            },
+            { onConflict: "email" }
+          )
+          .select()
+          .single();
+
+        if (error || !contractor) {
+          console.error("Contractor upsert failed:", error);
           break;
         }
 
         // ===============================
-        // UPSERT CONTRACTOR
+        // CITY LOGIC (SAFE + OPTIONAL)
         // ===============================
-        const { data: contractor, error: contractorErr } =
-          await supabase
-            .from("contractors")
-            .upsert(
-              {
-                email,
-                stripe_customer_id: customerId,
-                stripe_subscription_id: subscriptionId,
-                active: true,
-                plan: city ? "city_owner" : "pro",
-                city: city || null,
-              },
-              { onConflict: "email" }
-            )
-            .select()
-            .single();
-
-        if (contractorErr) {
-          console.error("Contractor upsert failed:", contractorErr);
-          break;
-        }
-
-        // ===============================
-        // CITY OWNERSHIP LOCK (SAFE UPDATE)
-        // ===============================
-        if (city && contractor) {
+        if (city) {
           const { data: cityRow } = await supabase
             .from("cities")
             .select("*")
@@ -116,23 +149,7 @@ export async function POST(req) {
             .single();
 
           if (cityRow) {
-            const existing = cityRow.active_contractors || [];
-
-            if (!existing.includes(contractor.id)) {
-              await supabase
-                .from("cities")
-                .update({
-                  active_contractors: [
-                    ...existing,
-                    contractor.id,
-                  ],
-                  status:
-                    existing.length + 1 >= cityRow.max_contractors
-                      ? "sold"
-                      : "active",
-                })
-                .eq("city", city);
-            }
+            await updateCity(city, contractor.id, cityRow);
           }
 
           await supabase
@@ -142,11 +159,20 @@ export async function POST(req) {
             .eq("contractorId", contractor.id);
         }
 
+        // ===============================
+        // AUDIT LOG (IMPORTANT FOR DEBUGGING)
+        // ===============================
+        await supabase.from("events").insert({
+          type: "stripe.checkout.completed",
+          contractor_id: contractor.id,
+          payload: session,
+        });
+
         break;
       }
 
       // =====================================================
-      // SUBSCRIPTION UPDATED
+      // 🔄 SUBSCRIPTION UPDATE
       // =====================================================
       case "customer.subscription.updated": {
         const sub = event.data.object;
@@ -162,7 +188,7 @@ export async function POST(req) {
       }
 
       // =====================================================
-      // SUBSCRIPTION DELETED
+      // ❌ SUBSCRIPTION CANCELLED
       // =====================================================
       case "customer.subscription.deleted": {
         const sub = event.data.object;
@@ -182,10 +208,16 @@ export async function POST(req) {
         console.log("Unhandled event:", event.type);
     }
 
+    // ===============================
+    // MARK PROCESSED (FINAL STEP)
+    // ===============================
+    await markProcessed(event.id, event.type);
+
     return Response.json({ received: true });
 
   } catch (err) {
     console.error("Webhook crash:", err);
+
     return Response.json(
       { error: "Webhook failed" },
       { status: 500 }

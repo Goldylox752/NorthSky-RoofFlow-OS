@@ -13,7 +13,7 @@ const supabase = createClient(
 );
 
 // ===============================
-// 🔐 ATOMIC IDEMPOTENCY LOCK (BEST PRACTICE)
+// 🔐 EVENT LOCK WITH TIMEOUT SAFETY
 // ===============================
 async function lockEvent(eventId, type) {
   const { error } = await supabase.from("stripe_events").insert({
@@ -21,14 +21,27 @@ async function lockEvent(eventId, type) {
     type,
     status: "processing",
     created_at: new Date().toISOString(),
+    locked_at: new Date().toISOString(),
   });
 
-  // if duplicate key → already processed or locked
   return !error;
 }
 
 // ===============================
-// MARK SUCCESS
+// 🔁 RECOVERY: UNSTUCK EVENTS (CRITICAL UPGRADE)
+// ===============================
+async function recoverStuckEvents() {
+  const cutoff = new Date(Date.now() - 1000 * 60 * 5); // 5 min
+
+  await supabase
+    .from("stripe_events")
+    .update({ status: "failed", error: "timeout_recovered" })
+    .eq("status", "processing")
+    .lt("locked_at", cutoff.toISOString());
+}
+
+// ===============================
+// MARKERS
 // ===============================
 async function markSuccess(eventId) {
   await supabase
@@ -40,9 +53,6 @@ async function markSuccess(eventId) {
     .eq("id", eventId);
 }
 
-// ===============================
-// MARK FAILURE (FOR RETRIES)
-// ===============================
 async function markFailed(eventId, error) {
   await supabase
     .from("stripe_events")
@@ -54,7 +64,7 @@ async function markFailed(eventId, error) {
 }
 
 // ===============================
-// SAFE CITY UPDATE (UNCHANGED BUT CLEANED)
+// CITY UPDATE (UNCHANGED BUT SAFE)
 // ===============================
 async function updateCity(city, contractorId, cityRow) {
   const existing = cityRow.active_contractors || [];
@@ -76,7 +86,7 @@ async function updateCity(city, contractorId, cityRow) {
 }
 
 // ===============================
-// WEBHOOK
+// MAIN WEBHOOK
 // ===============================
 export async function POST(req) {
   let event;
@@ -95,19 +105,16 @@ export async function POST(req) {
     );
 
     // ===============================
-    // 🔐 HARD IDEMPOTENCY LOCK FIRST (CRITICAL FIX)
+    // 🔐 IDEMPOTENCY + LOCK
     // ===============================
     const locked = await lockEvent(event.id, event.type);
 
     if (!locked) {
-      return Response.json({
-        received: true,
-        duplicate: true,
-      });
+      return Response.json({ duplicate: true, received: true });
     }
 
     // ===============================
-    // ROUTER
+    // PROCESS EVENT
     // ===============================
     switch (event.type) {
 
@@ -188,7 +195,7 @@ export async function POST(req) {
       }
 
       // =====================================================
-      // SUBSCRIPTION DELETED
+      // SUBSCRIPTION CANCELLED
       // =====================================================
       case "customer.subscription.deleted": {
         const sub = event.data.object;
@@ -203,13 +210,10 @@ export async function POST(req) {
 
         break;
       }
-
-      default:
-        console.log("Unhandled event:", event.type);
     }
 
     // ===============================
-    // MARK SUCCESS (ONLY AFTER FULL EXECUTION)
+    // SUCCESS MARK
     // ===============================
     await markSuccess(event.id);
 
@@ -218,9 +222,6 @@ export async function POST(req) {
   } catch (err) {
     console.error("Webhook crash:", err);
 
-    // ===============================
-    // SAFE FAILURE MARKING
-    // ===============================
     if (event?.id) {
       await markFailed(event.id, err);
     }
